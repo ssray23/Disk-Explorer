@@ -8,15 +8,17 @@ struct TreemapRect {
 public struct TreeMapView: View {
     let node: FileNode
     let selectedNode: FileNode?
+    let flatItems: [FileNode]?
     let onSelect: (FileNode) -> Void
     let onDrillDown: (FileNode) -> Void
     var onGoUp: (() -> Void)? = nil
     
     @State private var hoveredNodeID: UUID? = nil
     
-    public init(node: FileNode, selectedNode: FileNode?, onSelect: @escaping (FileNode) -> Void, onDrillDown: @escaping (FileNode) -> Void, onGoUp: (() -> Void)? = nil) {
+    public init(node: FileNode, selectedNode: FileNode?, flatItems: [FileNode]? = nil, onSelect: @escaping (FileNode) -> Void, onDrillDown: @escaping (FileNode) -> Void, onGoUp: (() -> Void)? = nil) {
         self.node = node
         self.selectedNode = selectedNode
+        self.flatItems = flatItems
         self.onSelect = onSelect
         self.onDrillDown = onDrillDown
         self.onGoUp = onGoUp
@@ -25,7 +27,7 @@ public struct TreeMapView: View {
     public var body: some View {
         ZStack(alignment: .topLeading) {
             GeometryReader { geo in
-                let rects = squarify(node: node, bounds: CGRect(origin: .zero, size: geo.size))
+                let rects = squarify(node: node, items: flatItems, bounds: CGRect(origin: .zero, size: geo.size))
                 
                 ZStack {
                     ForEach(rects, id: \.node.id) { tmRect in
@@ -93,6 +95,7 @@ public struct TreeMapView: View {
                     }
                 }
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: node.version)
+                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: flatItems?.count)
                 .animation(.easeInOut(duration: 0.2), value: selectedNode?.id)
             }
             
@@ -117,23 +120,29 @@ public struct TreeMapView: View {
     
     // MARK: - Squarified Treemap Algorithm
     
-    private func squarify(node: FileNode, bounds: CGRect) -> [TreemapRect] {
-        guard let children = node.children, !children.isEmpty else {
+    private func squarify(node: FileNode, items: [FileNode]?, bounds: CGRect) -> [TreemapRect] {
+        let displayItems: [FileNode]
+        
+        if let items = items {
+            displayItems = items
+        } else if let children = node.children, !children.isEmpty {
+            displayItems = children
+        } else {
             return [TreemapRect(node: node, rect: bounds)]
         }
         
-        let totalSize = children.reduce(0) { $0 + $1.size }
+        guard !displayItems.isEmpty else { return [] }
+        
+        let totalSize = displayItems.reduce(0) { $0 + $1.size }
         guard totalSize > 0 else { return [] }
         
         var rects: [TreemapRect] = []
         var remainingBounds = bounds
+        var currentRemainingSize = totalSize
         
-        // Simple slice-and-dice for performance and simplicity in this lightweight version.
-        // A true squarified algorithm is O(N^2) or requires complex state.
-        // This is a "strip" algorithm which is fast and visually decent for file systems.
-        
-        for child in children {
-            let ratio = Double(child.size) / Double(totalSize)
+        for child in displayItems {
+            let childSize = max(child.size, 1)
+            let ratio = Double(childSize) / Double(max(currentRemainingSize, 1))
             
             if remainingBounds.width > remainingBounds.height {
                 // Split vertically
@@ -148,6 +157,9 @@ public struct TreeMapView: View {
                 rects.append(TreemapRect(node: child, rect: rect))
                 remainingBounds = CGRect(x: remainingBounds.minX, y: remainingBounds.minY + height, width: remainingBounds.width, height: remainingBounds.height - height)
             }
+            
+            currentRemainingSize -= child.size
+            if currentRemainingSize < 0 { currentRemainingSize = 0 }
         }
         
         return rects

@@ -120,7 +120,7 @@ The ViewModels orchestrate communication between background services and the mai
 
 ## Features
 
-- **Interactive Treemap**: A beautiful, glassmorphic visual representation of your disk space. The larger the block, the more space it consumes. Click to drill down into folders. Features a highly visible highlight system to track selections across the UI.
+- **Interactive Treemap**: A beautiful, glassmorphic visual representation of your disk space. The larger the block, the more space it consumes. Double-click to drill down into folders, and freely navigate your history with the dynamic breadcrumb bar. The visual map dynamically morphs between rendering structural folder hierarchies and rendering flat files depending on your "Files Only" vs "Folders Only" selection! Features a highly visible highlight system to track selections across the UI.
 - **Category Histogram**: A responsive stacked bar chart that breaks down your storage by file type (Applications, Documents, Developer files, System Caches, etc.).
 - **Largest Items List**: Instantly see the largest individual files and folders within any directory, complete with inline visual histogram bars representing their relative sizes. Also correctly delineates deep firmlinks, rendering both standard logical bounds and underlying physical data routes.
 - **Safety First Design**: Built-in protections automatically disable deletion functionality for critical OS `.system` files, preventing accidental data loss.

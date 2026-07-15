@@ -7,11 +7,12 @@ public struct TopItemsListView: View {
     var onDoubleTap: ((FileNode) -> Void)?
     var onListUpdated: (([FileNode]) -> Void)?
     
-    @State private var showFilesOnly = true
+    @Binding var showFilesOnly: Bool
     
-    public init(rootNode: FileNode, selectedNode: FileNode? = nil, onSelect: @escaping (FileNode) -> Void, onDoubleTap: ((FileNode) -> Void)? = nil, onListUpdated: (([FileNode]) -> Void)? = nil) {
+    public init(rootNode: FileNode, selectedNode: FileNode? = nil, showFilesOnly: Binding<Bool>, onSelect: @escaping (FileNode) -> Void, onDoubleTap: ((FileNode) -> Void)? = nil, onListUpdated: (([FileNode]) -> Void)? = nil) {
         self.rootNode = rootNode
         self.selectedNode = selectedNode
+        self._showFilesOnly = showFilesOnly
         self.onSelect = onSelect
         self.onDoubleTap = onDoubleTap
         self.onListUpdated = onListUpdated

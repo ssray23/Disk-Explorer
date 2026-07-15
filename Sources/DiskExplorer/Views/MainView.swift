@@ -105,61 +105,36 @@ public struct MainView: View {
                 VStack(spacing: 0) {
                     // Header area: Path + Breadcrumbs
                     HStack {
-                        if viewModel.currentPath.isEmpty {
-                            Text(rootNode.path.path)
-                                .font(.headline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(
-                                    LinearGradient(gradient: Gradient(colors: [.cyan, .blue]), startPoint: .leading, endPoint: .trailing)
-                                )
-                                .clipShape(Capsule())
-                                .shadow(color: Color.black.opacity(0.1), radius: 3, x: 0, y: 2)
-                        } else {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack {
-                                    // Root button
-                                    Button(action: {
-                                        viewModel.currentPath = []
-                                        viewModel.selectedNode = nil
-                                    }) {
-                                        Text(rootNode.name)
-                                            .fontWeight(.semibold)
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 6)
-                                            .background(
-                                                LinearGradient(gradient: Gradient(colors: [.cyan, .blue]), startPoint: .leading, endPoint: .trailing)
-                                            )
-                                            .clipShape(Capsule())
-                                    }
-                                    .buttonStyle(.plain)
-                                    
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack {
+                                // Root button
+                                Button(action: {
+                                    viewModel.currentPath = []
+                                    viewModel.selectedNode = nil
+                                }) {
+                                    BreadcrumbItemView(name: rootNode.name, isHighlighted: viewModel.currentPath.isEmpty)
+                                }
+                                .buttonStyle(.plain)
+                                
+                                if !viewModel.currentPath.isEmpty {
                                     Image(systemName: "chevron.right")
                                         .foregroundColor(.secondary)
                                         .font(.caption)
+                                }
+                                
+                                ForEach(Array(viewModel.currentPath.enumerated()), id: \.element.id) { index, pathNode in
+                                    let isLast = index == viewModel.currentPath.count - 1
+                                    Button(action: {
+                                        viewModel.navigateBack(to: index)
+                                    }) {
+                                        BreadcrumbItemView(name: pathNode.name, isHighlighted: isLast)
+                                    }
+                                    .buttonStyle(.plain)
                                     
-                                    ForEach(Array(viewModel.currentPath.enumerated()), id: \.element.id) { index, pathNode in
-                                        Button(action: {
-                                            viewModel.navigateBack(to: index)
-                                        }) {
-                                            Text(pathNode.name)
-                                                .fontWeight(.medium)
-                                                .foregroundColor(.primary)
-                                                .padding(.horizontal, 10)
-                                                .padding(.vertical, 4)
-                                                .background(Color.secondary.opacity(0.1))
-                                                .cornerRadius(6)
-                                        }
-                                        .buttonStyle(.plain)
-                                        
-                                        if index < viewModel.currentPath.count - 1 {
-                                            Image(systemName: "chevron.right")
-                                                .foregroundColor(.secondary)
-                                                .font(.caption)
-                                        }
+                                    if !isLast {
+                                        Image(systemName: "chevron.right")
+                                            .foregroundColor(.secondary)
+                                            .font(.caption)
                                     }
                                 }
                             }
@@ -181,6 +156,7 @@ public struct MainView: View {
                         TreeMapView(
                             node: currentFolder,
                             selectedNode: viewModel.selectedNode,
+                            flatItems: viewModel.showFilesOnly ? viewModel.currentListItems : nil,
                             onSelect: { node in
                                 viewModel.selectedNode = node
                             },
@@ -203,6 +179,7 @@ public struct MainView: View {
                             TopItemsListView(
                                 rootNode: currentFolder,
                                 selectedNode: viewModel.selectedNode,
+                                showFilesOnly: $viewModel.showFilesOnly,
                                 onSelect: { node in
                                     viewModel.selectedNode = node
                                 },
@@ -272,6 +249,34 @@ public struct MainView: View {
                 .navigationSplitViewColumnWidth(min: 250, ideal: CGFloat(inspectorWidth), max: 400)
                 .ignoresSafeArea(.all, edges: .top)
             }
+        }
+    }
+}
+
+struct BreadcrumbItemView: View {
+    let name: String
+    let isHighlighted: Bool
+    
+    var body: some View {
+        if isHighlighted {
+            Text(name)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    LinearGradient(gradient: Gradient(colors: [.cyan, .blue]), startPoint: .leading, endPoint: .trailing)
+                )
+                .clipShape(Capsule())
+                .shadow(color: Color.black.opacity(0.1), radius: 3, x: 0, y: 2)
+        } else {
+            Text(name)
+                .fontWeight(.medium)
+                .foregroundColor(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Color.secondary.opacity(0.1))
+                .cornerRadius(6)
         }
     }
 }

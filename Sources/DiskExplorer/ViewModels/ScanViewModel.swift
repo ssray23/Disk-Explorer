@@ -11,6 +11,7 @@ public class ScanViewModel: ObservableObject {
     @Published public var isScanning: Bool = false
     @Published public var scanError: String?
     @Published public var currentPath: [FileNode] = [] // For breadcrumbs/drill-down
+    @Published public var showFilesOnly: Bool = false
     
     // Derived properties
     public var currentFolderNode: FileNode? {
@@ -70,9 +71,6 @@ public class ScanViewModel: ObservableObject {
     
     public func drillDown(to node: FileNode) {
         if node.isDirectory {
-            if currentPath.isEmpty, let root = rootNode {
-                currentPath.append(root)
-            }
             currentPath.append(node)
             selectedNode = nil
         }
@@ -95,7 +93,7 @@ public class ScanViewModel: ObservableObject {
         selectedNode = nil
     }
     
-    public var currentListItems: [FileNode] = []
+    @Published public var currentListItems: [FileNode] = []
     
     public func trashSelectedNode() async {
         guard let node = selectedNode else { return }
