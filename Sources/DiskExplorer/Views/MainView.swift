@@ -191,6 +191,7 @@ public struct MainView: View {
                                     
                                     TopItemsListView(
                                         rootNode: currentFolder,
+                                        selectedNode: viewModel.selectedNode,
                                         onSelect: { node in
                                             viewModel.selectedNode = node
                                         },

@@ -2,13 +2,15 @@ import SwiftUI
 
 public struct TopItemsListView: View {
     let rootNode: FileNode
+    let selectedNode: FileNode?
     let onSelect: (FileNode) -> Void
     var onDoubleTap: ((FileNode) -> Void)?
     
     @State private var showFilesOnly = true
     
-    public init(rootNode: FileNode, onSelect: @escaping (FileNode) -> Void, onDoubleTap: ((FileNode) -> Void)? = nil) {
+    public init(rootNode: FileNode, selectedNode: FileNode? = nil, onSelect: @escaping (FileNode) -> Void, onDoubleTap: ((FileNode) -> Void)? = nil) {
         self.rootNode = rootNode
+        self.selectedNode = selectedNode
         self.onSelect = onSelect
         self.onDoubleTap = onDoubleTap
     }
@@ -136,6 +138,9 @@ public struct TopItemsListView: View {
                     .padding(.leading, 44)
                 }
                 .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+                .background(item.id == selectedNode?.id ? Color.accentColor.opacity(0.15) : Color.clear)
+                .cornerRadius(8)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) {
                     if item.isDirectory {

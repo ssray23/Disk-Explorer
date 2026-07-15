@@ -50,7 +50,7 @@ public struct TreeMapView: View {
                                     )
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                            .stroke(isSelected ? Color.white : Color.white.opacity(0.3), lineWidth: isSelected ? 3 : 1)
                                     )
                                     .shadow(color: Color.black.opacity(0.2), radius: 3, x: 1, y: 1)
                                 

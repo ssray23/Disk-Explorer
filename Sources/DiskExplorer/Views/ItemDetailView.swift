@@ -104,6 +104,7 @@ public struct ItemDetailView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.purple)
+                    .disabled(node.category == .system)
                 }
                 
                 Button(action: onTrash) {
@@ -116,6 +117,7 @@ public struct ItemDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
+                .disabled(node.category == .system)
                 
                 Button(action: onReveal) {
                     HStack {
