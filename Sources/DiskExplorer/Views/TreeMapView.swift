@@ -92,7 +92,7 @@ public struct TreeMapView: View {
                         }
                     }
                 }
-                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: node.id)
+                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: node.version)
                 .animation(.easeInOut(duration: 0.2), value: selectedNode?.id)
             }
             

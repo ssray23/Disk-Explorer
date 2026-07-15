@@ -5,15 +5,9 @@ public class CleanupService {
     
     /// Moves a file to the Trash using NSWorkspace, allowing it to be recovered by the user.
     public static func moveToTrash(url: URL) async throws -> URL? {
-        return try await withCheckedThrowingContinuation { continuation in
-            NSWorkspace.shared.recycle([url]) { trashedURLs, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: trashedURLs.keys.first)
-                }
-            }
-        }
+        var resultingURL: NSURL? = nil
+        try FileManager.default.trashItem(at: url, resultingItemURL: &resultingURL)
+        return resultingURL as URL?
     }
     
     /// Reveals the file in Finder

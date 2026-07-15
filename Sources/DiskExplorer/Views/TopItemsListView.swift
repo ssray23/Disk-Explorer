@@ -5,63 +5,74 @@ public struct TopItemsListView: View {
     let selectedNode: FileNode?
     let onSelect: (FileNode) -> Void
     var onDoubleTap: ((FileNode) -> Void)?
+    var onListUpdated: (([FileNode]) -> Void)?
     
     @State private var showFilesOnly = true
     
-    public init(rootNode: FileNode, selectedNode: FileNode? = nil, onSelect: @escaping (FileNode) -> Void, onDoubleTap: ((FileNode) -> Void)? = nil) {
+    public init(rootNode: FileNode, selectedNode: FileNode? = nil, onSelect: @escaping (FileNode) -> Void, onDoubleTap: ((FileNode) -> Void)? = nil, onListUpdated: (([FileNode]) -> Void)? = nil) {
         self.rootNode = rootNode
         self.selectedNode = selectedNode
         self.onSelect = onSelect
         self.onDoubleTap = onDoubleTap
+        self.onListUpdated = onListUpdated
     }
     
     @State private var cachedItems: [FileNode] = []
     
-    private func updateCachedItems() {
-        let showFiles = showFilesOnly
+    private func updateCachedItems(showFiles: Bool) {
         let root = rootNode
         
         Task.detached {
             var allItems: [FileNode] = []
             
-            // Iterative traversal to prevent stack overflow on background threads
-            var stack: [FileNode] = []
-            if let children = root.children {
-                stack.append(contentsOf: children)
-            }
-            
-            while !stack.isEmpty {
-                let node = stack.removeLast()
+            // If showFiles is true, recursively find all files in the subtree.
+            // If false, only show the direct children of the current folder.
+            if showFiles {
+                var stack: [FileNode] = []
+                if let children = root.children {
+                    stack.append(contentsOf: children)
+                }
                 
-                if showFiles {
+                while !stack.isEmpty {
+                    if Task.isCancelled { return }
+                    
+                    let node = stack.removeLast()
+                    
                     if !node.isDirectory {
                         allItems.append(node)
                     }
-                } else {
-                    allItems.append(node)
+                    
+                    if let children = node.children {
+                        stack.append(contentsOf: children)
+                    }
                 }
-                
-                if let children = node.children {
-                    stack.append(contentsOf: children)
+            } else {
+                if let children = root.children {
+                    let folders = children.filter { $0.isDirectory }
+                    allItems.append(contentsOf: folders)
                 }
             }
             
+            if Task.isCancelled { return }
             allItems.sort { $0.size > $1.size }
             
             var uniqueItems: [FileNode] = []
             var seenPaths: Set<URL> = []
             
             for item in allItems {
+                if Task.isCancelled { return }
                 if !seenPaths.contains(item.path) {
                     seenPaths.insert(item.path)
                     uniqueItems.append(item)
                 }
-                if uniqueItems.count >= 50 { break }
+                if uniqueItems.count >= 150 { break }
             }
             
+            if Task.isCancelled { return }
             let finalItems = uniqueItems
             await MainActor.run {
                 self.cachedItems = finalItems
+                self.onListUpdated?(finalItems)
             }
         }
     }
@@ -77,10 +88,10 @@ public struct TopItemsListView: View {
                 Spacer()
                 Picker("", selection: $showFilesOnly) {
                     Text("Files Only").tag(true)
-                    Text("Files & Folders").tag(false)
+                    Text("Folders Only").tag(false)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 200)
+                .frame(width: 260)
             }
             .padding(.horizontal, 24)
             .padding(.top, 16)
@@ -96,6 +107,16 @@ public struct TopItemsListView: View {
                             Image(systemName: item.isDirectory ? "folder.fill" : "doc.text.fill")
                                 .foregroundColor(item.category.color)
                                 .font(.system(size: 14))
+                                
+                            if item.isAlias {
+                                Image(systemName: "arrowshape.turn.up.right.fill")
+                                    .foregroundColor(.white)
+                                    .font(.system(size: 8, weight: .bold))
+                                    .padding(2)
+                                    .background(Color.black.opacity(0.6))
+                                    .clipShape(Circle())
+                                    .offset(x: 10, y: 10)
+                            }
                         }
                         
                         VStack(alignment: .leading, spacing: 2) {
@@ -160,14 +181,8 @@ public struct TopItemsListView: View {
             }
             .listStyle(.inset)
         }
-        .onAppear {
-            updateCachedItems()
-        }
-        .onChange(of: rootNode.id) { _ in
-            updateCachedItems()
-        }
-        .onChange(of: showFilesOnly) { _ in
-            updateCachedItems()
+        .task(id: "\(rootNode.id)-\(rootNode.version)-\(showFilesOnly)") {
+            updateCachedItems(showFiles: showFilesOnly)
         }
     }
 }

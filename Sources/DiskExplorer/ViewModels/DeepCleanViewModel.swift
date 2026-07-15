@@ -83,12 +83,15 @@ public class DeepCleanViewModel: ObservableObject {
         return await Task.detached {
             var totalSize: Int64 = 0
             let fileManager = FileManager.default
-            if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey], options: []) {
+            if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .fileSizeKey], options: []) {
                 while let obj = enumerator.nextObject() {
                     if let fileURL = obj as? URL,
-                       let resources = try? fileURL.resourceValues(forKeys: [.fileSizeKey]),
-                       let size = resources.fileSize {
-                        totalSize += Int64(size)
+                       let resources = try? fileURL.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .fileSizeKey]) {
+                        if let allocated = resources.totalFileAllocatedSize, allocated > 0 {
+                            totalSize += Int64(allocated)
+                        } else if let size = resources.fileSize {
+                            totalSize += Int64(size)
+                        }
                     }
                 }
             }

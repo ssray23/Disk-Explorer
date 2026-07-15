@@ -68,13 +68,8 @@ public struct CategoryHistogramView: View {
         }
         .padding(16)
         .background(Color(NSColor.controlBackgroundColor))
-        .onChange(of: rootNode.id) {
+        .task(id: rootNode.version) {
             calculateSizes()
-        }
-        .onAppear {
-            if currentRootID != rootNode.id {
-                calculateSizes()
-            }
         }
     }
     

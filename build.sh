@@ -22,6 +22,7 @@ touch "Disk Explorer.app"
 # Ad-hoc sign the entire bundle to satisfy macOS Gatekeeper and LaunchServices
 echo "🔐 Ad-hoc signing the app bundle..."
 xattr -cr "Disk Explorer.app"
+xattr -cr "Disk Explorer.app"
 codesign --force --deep --sign - "Disk Explorer.app"
 
 echo "✅ Build complete! You can now launch 'Disk Explorer.app'."

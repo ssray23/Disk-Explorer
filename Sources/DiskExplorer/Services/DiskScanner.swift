@@ -31,6 +31,9 @@ public class DiskScanner: @unchecked Sendable {
         
         let currentPhysicalPath = physicalPath ?? url.path
         
+        let resourceValues = try? url.resourceValues(forKeys: [.isAliasFileKey, .isSymbolicLinkKey])
+        let isAlias = (resourceValues?.isAliasFile == true) || (resourceValues?.isSymbolicLink == true)
+        
         // Base case: it's a file
         if !isDirectory.boolValue {
             let size = self.getFileSize(url: url)
@@ -41,6 +44,7 @@ public class DiskScanner: @unchecked Sendable {
                 physicalPath: currentPhysicalPath,
                 size: size,
                 isDirectory: false,
+                isAlias: isAlias,
                 children: nil,
                 category: classification.category,
                 explanation: classification.explanation
@@ -53,20 +57,22 @@ public class DiskScanner: @unchecked Sendable {
         
         // Note: For extreme performance, `fts_open` is better, but `FileManager.enumerator` 
         // with shallow traversal (skips descendants) is used here to build the tree recursively.
-        let keys: [URLResourceKey] = [.isDirectoryKey, .totalFileAllocatedSizeKey, .fileSizeKey, .isPackageKey]
+        let keys: [URLResourceKey] = [.isDirectoryKey, .totalFileAllocatedSizeKey, .fileSizeKey, .isPackageKey, .isAliasFileKey, .isSymbolicLinkKey]
         
         if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: keys, options: [.skipsSubdirectoryDescendants, .skipsHiddenFiles]) {
             for case let fileURL as URL in enumerator {
                 if isCancelled { return nil }
                 
                 // If it's a package (like .app), we treat it as a file to avoid descending into it
-                let isPackage = (try? fileURL.resourceValues(forKeys: [.isPackageKey]).isPackage) ?? false
+                let resourceVals = try? fileURL.resourceValues(forKeys: [.isPackageKey, .isAliasFileKey, .isSymbolicLinkKey])
+                let isPackage = resourceVals?.isPackage ?? false
+                let childIsAlias = (resourceVals?.isAliasFile == true) || (resourceVals?.isSymbolicLink == true)
                 
                 if isPackage {
                     let size = getDirectorySizeFallback(url: fileURL) // Packages need deep size calc
                     let classification = FileCategories.classify(url: fileURL, isDirectory: false)
                     let childPhysicalPath = (currentPhysicalPath as NSString).appendingPathComponent(fileURL.lastPathComponent)
-                    let node = FileNode(name: fileURL.lastPathComponent, path: fileURL, physicalPath: childPhysicalPath, size: size, isDirectory: false, children: nil, category: classification.category, explanation: classification.explanation)
+                    let node = FileNode(name: fileURL.lastPathComponent, path: fileURL, physicalPath: childPhysicalPath, size: size, isDirectory: false, isAlias: childIsAlias, children: nil, category: classification.category, explanation: classification.explanation)
                     children.append(node)
                     totalSize += size
                 } else {
@@ -88,6 +94,7 @@ public class DiskScanner: @unchecked Sendable {
             physicalPath: currentPhysicalPath,
             size: totalSize,
             isDirectory: true,
+            isAlias: isAlias,
             children: children.isEmpty ? nil : children,
             category: classification.category,
             explanation: classification.explanation

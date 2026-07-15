@@ -95,18 +95,64 @@ public class ScanViewModel: ObservableObject {
         selectedNode = nil
     }
     
+    public var currentListItems: [FileNode] = []
+    
     public func trashSelectedNode() async {
         guard let node = selectedNode else { return }
         
-        do {
-            if let _ = try await CleanupService.moveToTrash(url: node.path) {
-                // Remove from tree (simple implementation: just reload or filter.
-                // For a robust app, we'd recursively traverse and remove the node, then recompute sizes.)
-                // To keep it simple, we just deselect for now.
-                self.selectedNode = nil
-                // Idealy trigger a re-scan of the current folder or remove from tree.
-                print("Successfully trashed \(node.name)")
+        // Determine the next item to select
+        var nextNodeToSelect: FileNode? = nil
+        
+        // Primary: Try to find the next item from the exactly rendered list in TopItemsListView
+        if let index = currentListItems.firstIndex(where: { $0.id == node.id }) {
+            if index + 1 < currentListItems.count {
+                nextNodeToSelect = currentListItems[index + 1]
+            } else if index - 1 >= 0 {
+                nextNodeToSelect = currentListItems[index - 1]
             }
+        }
+        
+        // Fallback: If not found in the list (e.g., trashing a folder from the TreeMap while the list shows "Files Only"),
+        // fallback to finding the next sibling in the current folder.
+        if nextNodeToSelect == nil {
+            if let currentFolder = self.currentFolderNode, let children = currentFolder.children {
+                let sortedChildren = children.sorted { $0.size > $1.size }
+                if let index = sortedChildren.firstIndex(where: { $0.id == node.id }) {
+                    if index + 1 < sortedChildren.count {
+                        nextNodeToSelect = sortedChildren[index + 1]
+                    } else if index - 1 >= 0 {
+                        nextNodeToSelect = sortedChildren[index - 1]
+                    }
+                }
+            }
+        }
+        
+        do {
+            let _ = try await CleanupService.moveToTrash(url: node.path)
+            
+            if var root = self.rootNode {
+                if root.id == node.id {
+                    self.rootNode = nil
+                    self.currentPath = []
+                } else {
+                    let _ = removeNode(withID: node.id, from: &root)
+                    self.rootNode = root
+                    
+                    var newPath: [FileNode] = []
+                    for oldNode in self.currentPath {
+                        if let matching = findNode(withID: oldNode.id, in: root) {
+                            newPath.append(matching)
+                        } else {
+                            break
+                        }
+                    }
+                    self.currentPath = newPath
+                }
+            }
+            
+            self.selectedNode = nextNodeToSelect
+            self.loadSystemInfo()
+            print("Successfully trashed \(node.name)")
         } catch {
             print("Failed to trash: \(error)")
         }
@@ -115,5 +161,44 @@ public class ScanViewModel: ObservableObject {
     public func revealSelectedNode() {
         guard let node = selectedNode else { return }
         CleanupService.revealInFinder(url: node.path)
+    }
+    
+    // MARK: - Tree Mutating Utilities
+    
+    private func removeNode(withID id: UUID, from node: inout FileNode) -> (removed: Bool, sizeDelta: Int64) {
+        guard var children = node.children else { return (false, 0) }
+        
+        if let index = children.firstIndex(where: { $0.id == id }) {
+            let removedSize = children[index].size
+            children.remove(at: index)
+            node.children = children
+            node.size -= removedSize
+            node.version += 1 // Force SwiftUI refresh
+            return (true, removedSize)
+        }
+        
+        for i in 0..<children.count {
+            let result = removeNode(withID: id, from: &children[i])
+            if result.removed {
+                node.children = children
+                node.size -= result.sizeDelta
+                node.version += 1 // Force SwiftUI refresh
+                return result
+            }
+        }
+        
+        return (false, 0)
+    }
+
+    private func findNode(withID id: UUID, in node: FileNode) -> FileNode? {
+        if node.id == id { return node }
+        if let children = node.children {
+            for child in children {
+                if let found = findNode(withID: id, in: child) {
+                    return found
+                }
+            }
+        }
+        return nil
     }
 }
