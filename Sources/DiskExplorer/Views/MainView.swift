@@ -70,6 +70,7 @@ public struct MainView: View {
             }
             .navigationSplitViewColumnWidth(min: 250, ideal: 250, max: 350)
             .ignoresSafeArea(.all, edges: .top)
+            .toolbar(removing: .sidebarToggle)
             
         } content: {
             // Main Content
