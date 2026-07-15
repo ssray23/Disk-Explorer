@@ -15,52 +15,59 @@ public struct TopItemsListView: View {
         self.onDoubleTap = onDoubleTap
     }
     
-    private var topItems: [FileNode] {
-        var allItems: [FileNode] = []
+    @State private var cachedItems: [FileNode] = []
+    
+    private func updateCachedItems() {
+        let showFiles = showFilesOnly
+        let root = rootNode
         
-        func collect(node: FileNode) {
-            if showFilesOnly {
-                if !node.isDirectory {
+        Task.detached {
+            var allItems: [FileNode] = []
+            
+            // Iterative traversal to prevent stack overflow on background threads
+            var stack: [FileNode] = []
+            if let children = root.children {
+                stack.append(contentsOf: children)
+            }
+            
+            while !stack.isEmpty {
+                let node = stack.removeLast()
+                
+                if showFiles {
+                    if !node.isDirectory {
+                        allItems.append(node)
+                    }
+                } else {
                     allItems.append(node)
                 }
-            } else {
-                allItems.append(node)
-            }
-            if let children = node.children {
-                for child in children {
-                    collect(node: child)
+                
+                if let children = node.children {
+                    stack.append(contentsOf: children)
                 }
             }
-        }
-        
-        // Optimize: Don't traverse the whole massive tree if not needed,
-        // but for a lightweight app, we do a quick recursive collect on the already-in-memory tree.
-        if let children = rootNode.children {
-            for child in children {
-                collect(node: child)
+            
+            allItems.sort { $0.size > $1.size }
+            
+            var uniqueItems: [FileNode] = []
+            var seenPaths: Set<URL> = []
+            
+            for item in allItems {
+                if !seenPaths.contains(item.path) {
+                    seenPaths.insert(item.path)
+                    uniqueItems.append(item)
+                }
+                if uniqueItems.count >= 50 { break }
+            }
+            
+            let finalItems = uniqueItems
+            await MainActor.run {
+                self.cachedItems = finalItems
             }
         }
-        
-        // Sort by size
-        allItems.sort { $0.size > $1.size }
-        
-        // Deduplicate by path to ensure no weird UI duplication
-        var uniqueItems: [FileNode] = []
-        var seenPaths: Set<URL> = []
-        
-        for item in allItems {
-            if !seenPaths.contains(item.path) {
-                seenPaths.insert(item.path)
-                uniqueItems.append(item)
-            }
-            if uniqueItems.count >= 50 { break }
-        }
-        
-        return uniqueItems
     }
     
     public var body: some View {
-        let items = topItems
+        let items = cachedItems
         let maxItemSize = items.first?.size ?? 1
         
         VStack(alignment: .leading) {
@@ -152,6 +159,15 @@ public struct TopItemsListView: View {
                 }
             }
             .listStyle(.inset)
+        }
+        .onAppear {
+            updateCachedItems()
+        }
+        .onChange(of: rootNode.id) { _ in
+            updateCachedItems()
+        }
+        .onChange(of: showFilesOnly) { _ in
+            updateCachedItems()
         }
     }
 }

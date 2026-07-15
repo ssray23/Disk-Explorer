@@ -43,7 +43,7 @@ public struct SettingsView: View {
                             }
                             .padding(.top, 8)
                             
-                            Text("1. Click the button above to open Privacy & Security.\n2. Find 'Disk Explorer' in the list (or add it using the + button).\n3. Toggle the switch to ON.")
+                            Text("1. Click the button above to open Privacy & Security.\n2. Find 'Disk Explorer' in the list and remove it using the minus (-) button.\n3. Click the plus (+) button and select the newly built Disk Explorer app.\n4. Toggle the switch to ON.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .padding(.top, 4)

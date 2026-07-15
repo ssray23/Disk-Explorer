@@ -102,7 +102,8 @@ graph TD
 ### 1. View Layer (SwiftUI)
 The presentation layer is strictly declarative. The `MainView` handles structural routing, acting as the primary host for the `ScanViewModel`. Subviews (`TreeMapView`, `TopItemsListView`, `ItemDetailView`) are passed specific isolated states (like the selected `FileNode`). 
 - **`TreeMapView`**: Implements a squarified treemap layout algorithm dynamically computing layout bounds through `GeometryReader`.
-- **`VSplitView`**: Uses macOS native split view structures to dynamically allocate screen real-estate between the visual map and list representation.
+- **`TopItemsListView`**: Displays the largest items utilizing a highly optimized, iterative tree-traversal array mechanism. By migrating away from recursive functions into an iterative stack implementation on detached background tasks, we strictly prevent thread stack overflows when analyzing deeply nested node trees. 
+- **`ItemDetailView`**: Presents an edge-to-edge inspector pane utilizing a `NavigationSplitView` architecture. To bypass restrictive macOS `NSVisualEffectView` Vibrancy blending engine (which often washes out standard `.bordered` buttons atop `.regularMaterial`), we deploy custom `.plain` button styles with strict opaque rendering parameters. Integrates deeply with the macOS environment, invoking `NSWorkspace.shared.open` and `@Environment(\.openURL)` to bridge native web searches and Finder revelation commands dynamically.
 
 ### 2. ViewModel Layer
 The ViewModels orchestrate communication between background services and the main UI thread.
@@ -112,6 +113,7 @@ The ViewModels orchestrate communication between background services and the mai
 ### 3. Service Layer
 - **`DiskScanner`**: A highly parallelized service utilizing `FileManager.enumerator`. Importantly, it bypasses standard Apple API firmlink obfuscation by manually passing and constructing physical directory paths dynamically, ensuring accuracy across volumes. Calculates sizes utilizing native `allocatedFileSizeKey` to capture true blocks-on-disk measurements.
 - **`CleanupService`**: Uses `NSWorkspace` to securely bypass sandbox constraints and perform unrecoverable `.Trash` relocation routines.
+- **`SystemInfoService`**: Interfaces tightly with standard macOS Darwin layers and `URLResourceValues` to track true device capacity dynamically.
 
 ### 4. Models
 - **`FileNode`**: The fundamental data unit forming a tree. It natively conforms to `Identifiable` and `Hashable`.
