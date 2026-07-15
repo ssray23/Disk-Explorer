@@ -12,12 +12,10 @@ public struct MainView: View {
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 300
     @AppStorage("treemapHeight") private var treemapHeight: Double = 300
     @State private var dragInitialHeight: Double? = nil
-    @State private var columnVisibility = NavigationSplitViewVisibility.all
-    
     public init() {}
     
     public var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        NavigationSplitView(columnVisibility: .constant(.all)) {
             // Sidebar
             VStack {
                 if let info = viewModel.systemInfo {
