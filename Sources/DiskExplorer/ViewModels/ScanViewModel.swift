@@ -98,6 +98,39 @@ public class ScanViewModel: ObservableObject {
     public func trashSelectedNode() async {
         guard let node = selectedNode else { return }
         
+        do {
+            let _ = try await CleanupService.moveToTrash(url: node.path)
+            removeFromTreeAndAdvanceSelection(node)
+            print("Successfully trashed \(node.name)")
+        } catch {
+            print("Failed to trash: \(error)")
+        }
+    }
+    
+    /// Deep clean removes an application's associated caches, preferences, and support
+    /// files first, then the app bundle itself, instead of just trashing the app and
+    /// leaving its leftover files behind.
+    public func deepCleanSelectedNode() async {
+        guard let node = selectedNode, node.category == .applications else { return }
+        
+        let result = await CleanupService.deepClean(appURL: node.path)
+        
+        for (url, error) in result.errors {
+            print("Failed to trash \(url.lastPathComponent) during deep clean: \(error)")
+        }
+        
+        // Only remove the node from the tree if the app bundle itself actually made it to the Trash.
+        // If only some associated files failed, we still count this as success since the app is gone.
+        if result.trashed.contains(node.path) {
+            removeFromTreeAndAdvanceSelection(node)
+            print("Deep cleaned \(node.name): removed \(result.trashed.count) item(s)")
+        }
+    }
+    
+    /// Removes a trashed node from the in-memory tree, re-resolves the breadcrumb path,
+    /// and picks a sensible next item to select. Shared by both trash and deep clean,
+    /// since both end with the same "node is gone, update the UI" step.
+    private func removeFromTreeAndAdvanceSelection(_ node: FileNode) {
         // Determine the next item to select
         var nextNodeToSelect: FileNode? = nil
         
@@ -125,35 +158,28 @@ public class ScanViewModel: ObservableObject {
             }
         }
         
-        do {
-            let _ = try await CleanupService.moveToTrash(url: node.path)
-            
-            if var root = self.rootNode {
-                if root.id == node.id {
-                    self.rootNode = nil
-                    self.currentPath = []
-                } else {
-                    let _ = removeNode(withID: node.id, from: &root)
-                    self.rootNode = root
-                    
-                    var newPath: [FileNode] = []
-                    for oldNode in self.currentPath {
-                        if let matching = findNode(withID: oldNode.id, in: root) {
-                            newPath.append(matching)
-                        } else {
-                            break
-                        }
+        if var root = self.rootNode {
+            if root.id == node.id {
+                self.rootNode = nil
+                self.currentPath = []
+            } else {
+                let _ = removeNode(withID: node.id, from: &root)
+                self.rootNode = root
+                
+                var newPath: [FileNode] = []
+                for oldNode in self.currentPath {
+                    if let matching = findNode(withID: oldNode.id, in: root) {
+                        newPath.append(matching)
+                    } else {
+                        break
                     }
-                    self.currentPath = newPath
                 }
+                self.currentPath = newPath
             }
-            
-            self.selectedNode = nextNodeToSelect
-            self.loadSystemInfo()
-            print("Successfully trashed \(node.name)")
-        } catch {
-            print("Failed to trash: \(error)")
         }
+        
+        self.selectedNode = nextNodeToSelect
+        self.loadSystemInfo()
     }
     
     public func revealSelectedNode() {

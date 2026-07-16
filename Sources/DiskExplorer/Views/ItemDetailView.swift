@@ -7,11 +7,13 @@ public struct ItemDetailView: View {
     let node: FileNode
     let onTrash: () -> Void
     let onReveal: () -> Void
+    let onDeepClean: () -> Void
     
-    public init(node: FileNode, onTrash: @escaping () -> Void, onReveal: @escaping () -> Void) {
+    public init(node: FileNode, onTrash: @escaping () -> Void, onReveal: @escaping () -> Void, onDeepClean: @escaping () -> Void) {
         self.node = node
         self.onTrash = onTrash
         self.onReveal = onReveal
+        self.onDeepClean = onDeepClean
     }
     
     public var body: some View {
@@ -132,10 +134,7 @@ public struct ItemDetailView: View {
             // Actions (Anchored to bottom)
             VStack(spacing: 12) {
                 if node.category == .applications {
-                    Button(action: {
-                        // Deep Clean (For now just move to trash, full logic would invoke CleanupService deep clean)
-                        onTrash()
-                    }) {
+                    Button(action: onDeepClean) {
                         HStack {
                             Image(systemName: "sparkles")
                             Text("Deep Clean Application")

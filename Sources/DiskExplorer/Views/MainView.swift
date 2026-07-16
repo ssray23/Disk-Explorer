@@ -224,6 +224,11 @@ public struct MainView: View {
                     },
                     onReveal: {
                         viewModel.revealSelectedNode()
+                    },
+                    onDeepClean: {
+                        Task {
+                            await viewModel.deepCleanSelectedNode()
+                        }
                     }
                 )
                 .navigationSplitViewColumnWidth(min: 250, ideal: CGFloat(inspectorWidth), max: 400)

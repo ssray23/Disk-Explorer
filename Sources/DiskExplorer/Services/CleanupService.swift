@@ -16,7 +16,7 @@ public class CleanupService {
     }
     
     /// Returns URLs of associated preferences and caches for an app bundle
-    public func getAppAssociatedFiles(appURL: URL) -> [URL] {
+    public static func getAppAssociatedFiles(appURL: URL) -> [URL] {
         guard appURL.pathExtension == "app" else { return [] }
         
         var associatedFiles: [URL] = []
@@ -51,7 +51,34 @@ public class CleanupService {
         return Array(Set(associatedFiles)) // Remove duplicates
     }
     
-    private func getBundleIdentifier(appURL: URL) -> String? {
+    /// Trashes an app's associated caches/preferences/support files, then the app bundle itself.
+    /// Returns the URLs that were successfully trashed and any errors encountered along the way,
+    /// so the caller can report partial failures instead of silently continuing.
+    @discardableResult
+    public static func deepClean(appURL: URL) async -> (trashed: [URL], errors: [(url: URL, error: Error)]) {
+        var trashed: [URL] = []
+        var errors: [(url: URL, error: Error)] = []
+
+        for associatedURL in getAppAssociatedFiles(appURL: appURL) {
+            do {
+                _ = try await moveToTrash(url: associatedURL)
+                trashed.append(associatedURL)
+            } catch {
+                errors.append((associatedURL, error))
+            }
+        }
+
+        do {
+            _ = try await moveToTrash(url: appURL)
+            trashed.append(appURL)
+        } catch {
+            errors.append((appURL, error))
+        }
+
+        return (trashed, errors)
+    }
+
+    private static func getBundleIdentifier(appURL: URL) -> String? {
         let infoPlistURL = appURL.appendingPathComponent("Contents/Info.plist")
         guard let data = try? Data(contentsOf: infoPlistURL),
               let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
