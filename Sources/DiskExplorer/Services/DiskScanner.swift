@@ -4,7 +4,21 @@ public class DiskScanner: @unchecked Sendable {
     
     public init() {}
     
-    private var isCancelled = false
+    private let cancelLock = NSLock()
+    private var _isCancelled = false
+    
+    private var isCancelled: Bool {
+        get {
+            cancelLock.lock()
+            defer { cancelLock.unlock() }
+            return _isCancelled
+        }
+        set {
+            cancelLock.lock()
+            defer { cancelLock.unlock() }
+            _isCancelled = newValue
+        }
+    }
     
     public func cancel() {
         isCancelled = true
@@ -15,13 +29,144 @@ public class DiskScanner: @unchecked Sendable {
         
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
-            let rootNode = self.scanDirectory(url: url)
+            let rootNode = await self.scanRoot(url: url)
             Task { @MainActor in
                 completionHandler(rootNode)
             }
         }
     }
     
+    /// Entry point for a scan. Parallelizes across the immediate children of `url` using a
+    /// TaskGroup bounded to the core count, then falls back to the existing single-threaded
+    /// `scanDirectory` for each child's own subtree.
+    ///
+    /// This deliberately does NOT parallelize recursively at every directory level. Swift's
+    /// structured concurrency uses a small cooperative thread pool (roughly one worker per
+    /// core), and `scanDirectory` does synchronous, blocking file I/O. A TaskGroup that spawns
+    /// child tasks at every recursion level, each of which blocks waiting on further child
+    /// tasks, can starve or deadlock that pool once nesting depth exceeds the worker count.
+    /// One bounded level of fan-out avoids that risk while still parallelizing the common
+    /// case: scanning a home folder, where the real concurrency opportunity is the handful of
+    /// large top-level folders (Library, Documents, Movies, Applications...), not the thousands
+    /// of individual subdirectories underneath them.
+    private func scanRoot(url: URL) async -> FileNode? {
+        if isCancelled { return nil }
+        
+        let fileManager = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return nil }
+        
+        // Not a directory, or no children to fan out over: fall back to the plain scan.
+        guard isDirectory.boolValue else {
+            return scanDirectory(url: url)
+        }
+        
+        let resourceValues = try? url.resourceValues(forKeys: [.isAliasFileKey, .isSymbolicLinkKey])
+        let isAlias = (resourceValues?.isAliasFile == true) || (resourceValues?.isSymbolicLink == true)
+        
+        let keys: [URLResourceKey] = [.isDirectoryKey, .totalFileAllocatedSizeKey, .fileSizeKey, .isPackageKey, .isAliasFileKey, .isSymbolicLinkKey]
+        
+        guard let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: keys, options: [.skipsSubdirectoryDescendants, .skipsHiddenFiles]) else {
+            return scanDirectory(url: url)
+        }
+        
+        let immediateChildren = enumerator.compactMap { $0 as? URL }
+        
+        guard !immediateChildren.isEmpty else {
+            let classification = FileCategories.classify(url: url, isDirectory: true)
+            return FileNode(
+                name: url.lastPathComponent,
+                path: url,
+                physicalPath: url.path,
+                size: 0,
+                isDirectory: true,
+                isAlias: isAlias,
+                children: nil,
+                category: classification.category,
+                explanation: classification.explanation
+            )
+        }
+        
+        let maxConcurrency = max(2, ProcessInfo.processInfo.activeProcessorCount)
+        var children: [FileNode] = []
+        children.reserveCapacity(immediateChildren.count)
+        
+        await withTaskGroup(of: FileNode?.self) { group in
+            var iterator = immediateChildren.makeIterator()
+            
+            func launchNext() {
+                guard let childURL = iterator.next() else { return }
+                group.addTask { [weak self] in
+                    guard let self = self else { return nil }
+                    let childPhysicalPath = (url.path as NSString).appendingPathComponent(childURL.lastPathComponent)
+                    return self.scanChild(fileURL: childURL, physicalPath: childPhysicalPath)
+                }
+            }
+            
+            for _ in 0..<maxConcurrency {
+                launchNext()
+            }
+            
+            while let result = await group.next() {
+                if let node = result {
+                    children.append(node)
+                }
+                launchNext()
+            }
+        }
+        
+        if isCancelled { return nil }
+        
+        children.sort { $0.size > $1.size }
+        let totalSize = children.reduce(0) { $0 + $1.size }
+        let classification = FileCategories.classify(url: url, isDirectory: true)
+        
+        return FileNode(
+            name: url.lastPathComponent,
+            path: url,
+            physicalPath: url.path,
+            size: totalSize,
+            isDirectory: true,
+            isAlias: isAlias,
+            children: children.isEmpty ? nil : children,
+            category: classification.category,
+            explanation: classification.explanation
+        )
+    }
+    
+    /// Decides whether an enumerated child is a package (treated as an opaque file with a
+    /// deep-size fallback) or a regular directory (recursed into normally). Shared by the
+    /// sequential loop in `scanDirectory` and the parallel top-level fan-out in `scanRoot`,
+    /// so the package-vs-directory decision only lives in one place.
+    private func scanChild(fileURL: URL, physicalPath: String) -> FileNode? {
+        if isCancelled { return nil }
+        
+        let resourceVals = try? fileURL.resourceValues(forKeys: [.isPackageKey, .isAliasFileKey, .isSymbolicLinkKey])
+        let isPackage = resourceVals?.isPackage ?? false
+        let childIsAlias = (resourceVals?.isAliasFile == true) || (resourceVals?.isSymbolicLink == true)
+        
+        if isPackage {
+            let size = getDirectorySizeFallback(url: fileURL) // Packages need deep size calc
+            let classification = FileCategories.classify(url: fileURL, isDirectory: false)
+            return FileNode(
+                name: fileURL.lastPathComponent,
+                path: fileURL,
+                physicalPath: physicalPath,
+                size: size,
+                isDirectory: false,
+                isAlias: childIsAlias,
+                children: nil,
+                category: classification.category,
+                explanation: classification.explanation
+            )
+        } else {
+            return scanDirectory(url: fileURL, physicalPath: physicalPath)
+        }
+    }
+    
+    /// Single-threaded recursive scan of a subtree. Used directly for leaf-level recursion
+    /// (called by `scanChild`), and as the whole-tree fallback when `scanRoot` can't fan out
+    /// (e.g. the scan target is a single file, not a directory).
     private func scanDirectory(url: URL, physicalPath: String? = nil) -> FileNode? {
         if isCancelled { return nil }
         
@@ -63,24 +208,10 @@ public class DiskScanner: @unchecked Sendable {
             for case let fileURL as URL in enumerator {
                 if isCancelled { return nil }
                 
-                // If it's a package (like .app), we treat it as a file to avoid descending into it
-                let resourceVals = try? fileURL.resourceValues(forKeys: [.isPackageKey, .isAliasFileKey, .isSymbolicLinkKey])
-                let isPackage = resourceVals?.isPackage ?? false
-                let childIsAlias = (resourceVals?.isAliasFile == true) || (resourceVals?.isSymbolicLink == true)
-                
-                if isPackage {
-                    let size = getDirectorySizeFallback(url: fileURL) // Packages need deep size calc
-                    let classification = FileCategories.classify(url: fileURL, isDirectory: false)
-                    let childPhysicalPath = (currentPhysicalPath as NSString).appendingPathComponent(fileURL.lastPathComponent)
-                    let node = FileNode(name: fileURL.lastPathComponent, path: fileURL, physicalPath: childPhysicalPath, size: size, isDirectory: false, isAlias: childIsAlias, children: nil, category: classification.category, explanation: classification.explanation)
-                    children.append(node)
-                    totalSize += size
-                } else {
-                    let childPhysicalPath = (currentPhysicalPath as NSString).appendingPathComponent(fileURL.lastPathComponent)
-                    if let childNode = scanDirectory(url: fileURL, physicalPath: childPhysicalPath) {
-                        children.append(childNode)
-                        totalSize += childNode.size
-                    }
+                let childPhysicalPath = (currentPhysicalPath as NSString).appendingPathComponent(fileURL.lastPathComponent)
+                if let childNode = scanChild(fileURL: fileURL, physicalPath: childPhysicalPath) {
+                    children.append(childNode)
+                    totalSize += childNode.size
                 }
             }
         }
