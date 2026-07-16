@@ -5,7 +5,7 @@ struct DiskExplorerApp: App {
     var body: some Scene {
         WindowGroup {
             MainView()
-                .frame(minWidth: 900, minHeight: 600)
+                .frame(minWidth: 1020, minHeight: 600)
         }
         .windowStyle(.hiddenTitleBar)
         
