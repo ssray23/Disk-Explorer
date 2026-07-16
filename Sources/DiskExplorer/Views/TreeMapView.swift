@@ -130,6 +130,9 @@ public struct TreeMapView: View {
         let displayItems: [FileNode]
         
         if let items = items {
+            if items.isEmpty {
+                return [TreemapRect(node: node, rect: bounds)]
+            }
             displayItems = items
         } else if let children = node.children, !children.isEmpty {
             displayItems = children

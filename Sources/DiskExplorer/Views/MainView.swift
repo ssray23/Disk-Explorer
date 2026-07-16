@@ -155,7 +155,7 @@ public struct MainView: View {
                         TreeMapView(
                             node: currentFolder,
                             selectedNode: viewModel.selectedNode,
-                            flatItems: viewModel.showFilesOnly ? viewModel.currentListItems : nil,
+                            flatItems: viewModel.currentListItems,
                             onSelect: { node in
                                 viewModel.selectedNode = node
                             },
