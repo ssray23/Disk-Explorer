@@ -5,7 +5,7 @@ public struct CategoryHistogramView: View {
     
     @State private var categorySizes: [(category: FileCategory, size: Int64)] = []
     @State private var isCalculating = true
-    @State private var currentRootID: UUID?
+    @State private var currentRootID: ObjectIdentifier?
     
     public init(rootNode: FileNode) {
         self.rootNode = rootNode

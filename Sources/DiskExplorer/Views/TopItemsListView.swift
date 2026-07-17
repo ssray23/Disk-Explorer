@@ -20,7 +20,7 @@ public struct TopItemsListView: View {
     
     @State private var cachedItems: [FileNode] = []
     @State private var lastTapTime: Date = Date.distantPast
-    @State private var lastTapItem: UUID? = nil
+    @State private var lastTapItem: ObjectIdentifier? = nil
     
     private func updateCachedItems(showFiles: Bool) async {
         let root = rootNode
@@ -105,99 +105,120 @@ public struct TopItemsListView: View {
             .padding(.top, 16)
             .padding(.bottom, 4)
             
-            List(items) { item in
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 12) {
-                        ZStack {
-                            Circle()
-                                .fill(item.category.color.opacity(0.2))
-                                .frame(width: 32, height: 32)
-                            Image(systemName: item.isDirectory ? "folder.fill" : "doc.text.fill")
-                                .foregroundColor(item.category.color)
-                                .font(.system(size: 14))
-                                
-                            if item.isAlias {
-                                Image(systemName: "arrowshape.turn.up.right.fill")
-                                    .foregroundColor(.white)
-                                    .font(.system(size: 8, weight: .bold))
-                                    .padding(2)
-                                    .background(Color.black.opacity(0.6))
-                                    .clipShape(Circle())
-                                    .offset(x: 10, y: 10)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(items) { item in
+                        TopItemRowView(item: item, isSelected: item.id == selectedNode?.id, maxItemSize: maxItemSize)
+                            .equatable()
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                let now = Date()
+                                if now.timeIntervalSince(lastTapTime) < 0.3 && lastTapItem == item.id {
+                                    // Double tap
+                                    if item.isDirectory {
+                                        onDoubleTap?(item)
+                                    }
+                                    // Reset to prevent triple-tap firing double-tap twice
+                                    lastTapTime = Date.distantPast
+                                } else {
+                                    // Single tap
+                                    onSelect(item)
+                                    lastTapItem = item.id
+                                    lastTapTime = now
+                                }
                             }
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.name)
-                                .fontWeight(.medium)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            let logicalPath = item.path.path
-                            let physicalPath = item.physicalPath
-                            
-                            Text(logicalPath)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                
-                            if logicalPath != physicalPath {
-                                Text("(\(physicalPath))")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary.opacity(0.7))
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        Text(ByteFormatter.format(item.size))
-                            .font(.callout)
-                            .fontWeight(.semibold)
-                            .monospacedDigit()
-                            .foregroundColor(.primary.opacity(0.8))
                     }
-                    
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.secondary.opacity(0.1))
-                            
-                            let ratio = Double(item.size) / Double(max(maxItemSize, 1))
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(LinearGradient(colors: [item.category.color.opacity(0.6), item.category.color], startPoint: .leading, endPoint: .trailing))
-                                .frame(width: geo.size.width * CGFloat(ratio))
-                        }
-                    }
-                    .frame(height: 6)
-                    .padding(.leading, 44)
                 }
-                .padding(.vertical, 6)
                 .padding(.horizontal, 8)
-                .background(item.id == selectedNode?.id ? Color.accentColor.opacity(0.15) : Color.clear)
-                .cornerRadius(8)
-                .onTapGesture {
-                    let now = Date()
-                    if now.timeIntervalSince(lastTapTime) < 0.3 && lastTapItem == item.id {
-                        // Double tap
-                        if item.isDirectory {
-                            onDoubleTap?(item)
-                        }
-                        // Reset to prevent triple-tap firing double-tap twice
-                        lastTapTime = Date.distantPast
-                    } else {
-                        // Single tap
-                        onSelect(item)
-                        lastTapItem = item.id
-                        lastTapTime = now
-                    }
-                }
+                .padding(.vertical, 4)
             }
-            .listStyle(.inset)
         }
         .task(id: "\(rootNode.id)-\(rootNode.version)-\(showFilesOnly)") {
             await updateCachedItems(showFiles: showFilesOnly)
         }
+    }
+}
+
+struct TopItemRowView: View, Equatable {
+    let item: FileNode
+    let isSelected: Bool
+    let maxItemSize: Int64
+    
+    nonisolated static func == (lhs: TopItemRowView, rhs: TopItemRowView) -> Bool {
+        return lhs.item.id == rhs.item.id && lhs.isSelected == rhs.isSelected && lhs.maxItemSize == rhs.maxItemSize
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(item.category.color.opacity(0.2))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: item.isDirectory ? "folder.fill" : "doc.text.fill")
+                        .foregroundColor(item.category.color)
+                        .font(.system(size: 14))
+                        
+                    if item.isAlias {
+                        Image(systemName: "arrowshape.turn.up.right.fill")
+                            .foregroundColor(.white)
+                            .font(.system(size: 8, weight: .bold))
+                            .padding(2)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(Circle())
+                            .offset(x: 10, y: 10)
+                    }
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    let logicalPath = item.physicalPath
+                    let physicalPath = item.physicalPath
+                    
+                    Text(logicalPath)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        
+                    if logicalPath != physicalPath {
+                        Text("(\(physicalPath))")
+                            .font(.caption2)
+                            .foregroundColor(.secondary.opacity(0.7))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                
+                Spacer()
+                
+                Text(ByteFormatter.format(item.size))
+                    .font(.callout)
+                    .fontWeight(.semibold)
+                    .monospacedDigit()
+                    .foregroundColor(.primary.opacity(0.8))
+            }
+            
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.secondary.opacity(0.1))
+                    
+                    let ratio = Double(item.size) / Double(max(maxItemSize, 1))
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(LinearGradient(colors: [item.category.color.opacity(0.6), item.category.color], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: geo.size.width * CGFloat(ratio))
+                }
+            }
+            .frame(height: 6)
+            .padding(.leading, 44)
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+        .cornerRadius(8)
     }
 }

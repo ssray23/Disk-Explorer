@@ -58,7 +58,7 @@ public class DiskScanner: @unchecked Sendable {
         
         // Not a directory, or no children to fan out over: fall back to the plain scan.
         guard isDirectory.boolValue else {
-            return scanDirectory(url: url)
+            return scanDirectory(url: url, isRoot: true)
         }
         
         let resourceValues = try? url.resourceValues(forKeys: [.isAliasFileKey, .isSymbolicLinkKey])
@@ -67,7 +67,7 @@ public class DiskScanner: @unchecked Sendable {
         let keys: [URLResourceKey] = [.isDirectoryKey, .totalFileAllocatedSizeKey, .fileSizeKey, .isPackageKey, .isAliasFileKey, .isSymbolicLinkKey]
         
         guard let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: keys, options: [.skipsSubdirectoryDescendants, .skipsHiddenFiles]) else {
-            return scanDirectory(url: url)
+            return scanDirectory(url: url, isRoot: true)
         }
         
         let immediateChildren = enumerator.compactMap { $0 as? URL }
@@ -76,14 +76,12 @@ public class DiskScanner: @unchecked Sendable {
             let classification = FileCategories.classify(url: url, isDirectory: true)
             return FileNode(
                 name: url.lastPathComponent,
-                path: url,
-                physicalPath: url.path,
                 size: 0,
                 isDirectory: true,
                 isAlias: isAlias,
                 children: nil,
                 category: classification.category,
-                explanation: classification.explanation
+                customURL: url
             )
         }
         
@@ -98,8 +96,7 @@ public class DiskScanner: @unchecked Sendable {
                 guard let childURL = iterator.next() else { return }
                 group.addTask { [weak self] in
                     guard let self = self else { return nil }
-                    let childPhysicalPath = (url.path as NSString).appendingPathComponent(childURL.lastPathComponent)
-                    return self.scanChild(fileURL: childURL, physicalPath: childPhysicalPath)
+                    return self.scanChild(fileURL: childURL)
                 }
             }
             
@@ -121,24 +118,28 @@ public class DiskScanner: @unchecked Sendable {
         let totalSize = children.reduce(0) { $0 + $1.size }
         let classification = FileCategories.classify(url: url, isDirectory: true)
         
-        return FileNode(
+        let root = FileNode(
             name: url.lastPathComponent,
-            path: url,
-            physicalPath: url.path,
             size: totalSize,
             isDirectory: true,
             isAlias: isAlias,
             children: children.isEmpty ? nil : children,
             category: classification.category,
-            explanation: classification.explanation
+            customURL: url
         )
+        
+        for child in children {
+            child.parent = root
+        }
+        
+        return root
     }
     
     /// Decides whether an enumerated child is a package (treated as an opaque file with a
     /// deep-size fallback) or a regular directory (recursed into normally). Shared by the
-    /// sequential loop in `scanDirectory` and the parallel top-level fan-out in `scanRoot`,
+    /// shared by the sequential loop in `scanDirectory` and the parallel top-level fan-out in `scanRoot`,
     /// so the package-vs-directory decision only lives in one place.
-    private func scanChild(fileURL: URL, physicalPath: String) -> FileNode? {
+    private func scanChild(fileURL: URL) -> FileNode? {
         if isCancelled { return nil }
         
         let resourceVals = try? fileURL.resourceValues(forKeys: [.isPackageKey, .isAliasFileKey, .isSymbolicLinkKey])
@@ -150,31 +151,26 @@ public class DiskScanner: @unchecked Sendable {
             let classification = FileCategories.classify(url: fileURL, isDirectory: false)
             return FileNode(
                 name: fileURL.lastPathComponent,
-                path: fileURL,
-                physicalPath: physicalPath,
                 size: size,
                 isDirectory: false,
                 isAlias: childIsAlias,
                 children: nil,
-                category: classification.category,
-                explanation: classification.explanation
+                category: classification.category
             )
         } else {
-            return scanDirectory(url: fileURL, physicalPath: physicalPath)
+            return scanDirectory(url: fileURL, isRoot: false)
         }
     }
     
     /// Single-threaded recursive scan of a subtree. Used directly for leaf-level recursion
     /// (called by `scanChild`), and as the whole-tree fallback when `scanRoot` can't fan out
     /// (e.g. the scan target is a single file, not a directory).
-    private func scanDirectory(url: URL, physicalPath: String? = nil) -> FileNode? {
+    private func scanDirectory(url: URL, isRoot: Bool = false) -> FileNode? {
         if isCancelled { return nil }
         
         let fileManager = FileManager.default
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return nil }
-        
-        let currentPhysicalPath = physicalPath ?? url.path
         
         let resourceValues = try? url.resourceValues(forKeys: [.isAliasFileKey, .isSymbolicLinkKey])
         let isAlias = (resourceValues?.isAliasFile == true) || (resourceValues?.isSymbolicLink == true)
@@ -185,14 +181,12 @@ public class DiskScanner: @unchecked Sendable {
             let classification = FileCategories.classify(url: url, isDirectory: false)
             return FileNode(
                 name: url.lastPathComponent,
-                path: url,
-                physicalPath: currentPhysicalPath,
                 size: size,
                 isDirectory: false,
                 isAlias: isAlias,
                 children: nil,
                 category: classification.category,
-                explanation: classification.explanation
+                customURL: isRoot ? url : nil
             )
         }
         
@@ -208,10 +202,11 @@ public class DiskScanner: @unchecked Sendable {
             for case let fileURL as URL in enumerator {
                 if isCancelled { return nil }
                 
-                let childPhysicalPath = (currentPhysicalPath as NSString).appendingPathComponent(fileURL.lastPathComponent)
-                if let childNode = scanChild(fileURL: fileURL, physicalPath: childPhysicalPath) {
-                    children.append(childNode)
-                    totalSize += childNode.size
+                autoreleasepool {
+                    if let childNode = scanChild(fileURL: fileURL) {
+                        children.append(childNode)
+                        totalSize += childNode.size
+                    }
                 }
             }
         }
@@ -219,17 +214,21 @@ public class DiskScanner: @unchecked Sendable {
         children.sort { $0.size > $1.size } // Sort by size descending
         
         let classification = FileCategories.classify(url: url, isDirectory: true)
-        return FileNode(
+        let root = FileNode(
             name: url.lastPathComponent,
-            path: url,
-            physicalPath: currentPhysicalPath,
             size: totalSize,
             isDirectory: true,
             isAlias: isAlias,
             children: children.isEmpty ? nil : children,
             category: classification.category,
-            explanation: classification.explanation
+            customURL: isRoot ? url : nil
         )
+        
+        for child in children {
+            child.parent = root
+        }
+        
+        return root
     }
     
     private func getFileSize(url: URL) -> Int64 {
@@ -253,7 +252,9 @@ public class DiskScanner: @unchecked Sendable {
         let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .fileSizeKey]
         if let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: keys) {
             for case let fileURL as URL in enumerator {
-                totalSize += getFileSize(url: fileURL)
+                autoreleasepool {
+                    totalSize += getFileSize(url: fileURL)
+                }
             }
         }
         return totalSize

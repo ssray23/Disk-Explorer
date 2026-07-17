@@ -173,13 +173,15 @@ public class ScanViewModel: ObservableObject {
             }
         }
         
-        if var root = self.rootNode {
+        if let root = self.rootNode {
             if root.id == node.id {
                 self.rootNode = nil
                 self.currentPath = []
             } else {
-                let _ = removeNode(withID: node.id, from: &root)
+                let _ = removeNode(withID: node.id, from: root)
+                root.version += 1
                 self.rootNode = root
+                self.objectWillChange.send()
                 
                 var newPath: [FileNode] = []
                 for oldNode in self.currentPath {
@@ -204,7 +206,7 @@ public class ScanViewModel: ObservableObject {
     
     // MARK: - Tree Mutating Utilities
     
-    private func removeNode(withID id: UUID, from node: inout FileNode) -> (removed: Bool, sizeDelta: Int64) {
+    private func removeNode(withID id: ObjectIdentifier, from node: FileNode) -> (removed: Bool, sizeDelta: Int64) {
         guard var children = node.children else { return (false, 0) }
         
         if let index = children.firstIndex(where: { $0.id == id }) {
@@ -212,16 +214,13 @@ public class ScanViewModel: ObservableObject {
             children.remove(at: index)
             node.children = children
             node.size -= removedSize
-            node.version += 1 // Force SwiftUI refresh
             return (true, removedSize)
         }
         
-        for i in 0..<children.count {
-            let result = removeNode(withID: id, from: &children[i])
+        for child in children {
+            let result = removeNode(withID: id, from: child)
             if result.removed {
-                node.children = children
                 node.size -= result.sizeDelta
-                node.version += 1 // Force SwiftUI refresh
                 return result
             }
         }
@@ -229,7 +228,7 @@ public class ScanViewModel: ObservableObject {
         return (false, 0)
     }
 
-    private func findNode(withID id: UUID, in node: FileNode) -> FileNode? {
+    private func findNode(withID id: ObjectIdentifier, in node: FileNode) -> FileNode? {
         if node.id == id { return node }
         if let children = node.children {
             for child in children {

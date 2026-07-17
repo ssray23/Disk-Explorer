@@ -13,9 +13,9 @@ public struct TreeMapView: View {
     let onDrillDown: (FileNode) -> Void
     var onGoUp: (() -> Void)? = nil
     
-    @State private var hoveredNodeID: UUID?
+    @State private var hoveredNodeID: ObjectIdentifier?
     @State private var lastTapTime: Date = Date.distantPast
-    @State private var lastTapItem: UUID? = nil
+    @State private var lastTapItem: ObjectIdentifier? = nil
     
     public init(node: FileNode, selectedNode: FileNode?, flatItems: [FileNode]? = nil, onSelect: @escaping (FileNode) -> Void, onDrillDown: @escaping (FileNode) -> Void, onGoUp: (() -> Void)? = nil) {
         self.node = node
@@ -154,13 +154,16 @@ public struct TreeMapView: View {
         let totalSize = displayItems.reduce(0) { $0 + $1.size }
         guard totalSize > 0 else { return [] }
         
-        // The algorithm assumes descending order; sort defensively rather than trusting callers.
-        let sortedItems = displayItems.sorted { $0.size > $1.size }
+        // The algorithm assumes descending order, which is guaranteed by DiskScanner.
+        // Cap to the largest 150 items to prevent SwiftUI from freezing when diffing/rendering
+        // tens of thousands of microscopic ZStack views in a large directory.
+        let maxItems = 150
+        let itemsToRender = displayItems.count > maxItems ? Array(displayItems.prefix(maxItems)) : displayItems
         
         // Convert byte sizes to pixel area so the aspect-ratio math below operates in real
         // coordinate units instead of arbitrary size units.
         let totalArea = Double(bounds.width) * Double(bounds.height)
-        let weightedItems: [(node: FileNode, area: Double)] = sortedItems.map { item in
+        let weightedItems: [(node: FileNode, area: Double)] = itemsToRender.map { item in
             (node: item, area: totalArea * Double(max(item.size, 1)) / Double(totalSize))
         }
         
