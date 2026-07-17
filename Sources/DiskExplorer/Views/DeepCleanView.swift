@@ -54,10 +54,16 @@ public struct DeepCleanView: View {
                             
                             Spacer()
                             
-                            Text(ByteFormatter.format(category.size))
-                                .font(.callout)
-                                .fontWeight(.semibold)
-                                .monospacedDigit()
+                            if let displayValue = category.displayValue {
+                                Text(displayValue)
+                                    .font(.callout)
+                                    .fontWeight(.semibold)
+                            } else {
+                                Text(ByteFormatter.format(category.size))
+                                    .font(.callout)
+                                    .fontWeight(.semibold)
+                                    .monospacedDigit()
+                            }
                         }
                         .padding(.vertical, 8)
                     }
@@ -94,14 +100,14 @@ public struct DeepCleanView: View {
                             .padding(.vertical, 12)
                             .padding(.horizontal, 24)
                             .background(
-                                LinearGradient(colors: viewModel.totalSelectedSize > 0 ? [.cyan, .blue] : [.gray, .gray.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
+                                LinearGradient(colors: viewModel.hasSelectedItems ? [.cyan, .blue] : [.gray, .gray.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
                             )
                             .foregroundColor(.white)
                             .cornerRadius(8)
                             .shadow(color: Color.black.opacity(0.1), radius: 3, x: 0, y: 2)
                     }
                     .buttonStyle(.plain)
-                    .disabled(viewModel.totalSelectedSize == 0)
+                    .disabled(!viewModel.hasSelectedItems)
                 }
                 .padding()
                 .background(Color(NSColor.windowBackgroundColor))
@@ -111,6 +117,16 @@ public struct DeepCleanView: View {
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(NSColor.windowBackgroundColor))
+        .alert(isPresented: Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            Alert(
+                title: Text("Cleanup Incomplete"),
+                message: Text(viewModel.errorMessage ?? "An unknown error occurred."),
+                dismissButton: .default(Text("OK"))
+            )
+        }
         .onAppear {
             Task {
                 await viewModel.scan()

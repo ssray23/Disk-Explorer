@@ -31,7 +31,7 @@ public final class FileNode: Identifiable, Hashable, @unchecked Sendable {
         if let customURL = customURL {
             return customURL
         }
-        return URL(fileURLWithPath: physicalPath)
+        return URL(fileURLWithPath: physicalPath, isDirectory: isDirectory)
     }
     
     public var physicalPath: String {

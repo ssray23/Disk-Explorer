@@ -12,6 +12,9 @@ public struct MainView: View {
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 300
     @AppStorage("treemapHeight") private var treemapHeight: Double = 300
     @State private var dragInitialHeight: Double? = nil
+    
+    @State private var hasFullDiskAccess: Bool = SystemInfoService.hasFullDiskAccess
+    @Environment(\.scenePhase) private var scenePhase
     public init() {}
     
     public var body: some View {
@@ -199,6 +202,13 @@ public struct MainView: View {
                 .ignoresSafeArea(.all, edges: .top)
             } else {
                 VStack(spacing: 20) {
+                    if !hasFullDiskAccess {
+                        FullDiskAccessWarningView()
+                            .padding(.horizontal, 40)
+                            .padding(.top, 20)
+                            .padding(.bottom, 20)
+                    }
+                    
                     Image(systemName: "internaldrive")
                         .font(.system(size: 60))
                         .foregroundColor(.blue)
@@ -211,6 +221,11 @@ public struct MainView: View {
                 }
                 .navigationSplitViewColumnWidth(min: 500, ideal: 800)
                 .ignoresSafeArea(.all, edges: .top)
+                .onChange(of: scenePhase) { newPhase in
+                    if newPhase == .active {
+                        hasFullDiskAccess = SystemInfoService.hasFullDiskAccess
+                    }
+                }
             }
         } detail: {
             // Inspector

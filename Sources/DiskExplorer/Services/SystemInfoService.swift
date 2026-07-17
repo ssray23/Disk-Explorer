@@ -3,6 +3,16 @@ import Darwin
 
 public class SystemInfoService {
     
+    public static var hasFullDiskAccess: Bool {
+        let path = "/Library/Application Support/com.apple.TCC"
+        do {
+            _ = try FileManager.default.contentsOfDirectory(atPath: path)
+            return true
+        } catch {
+            return false
+        }
+    }
+    
     public static func getSystemInfo() -> SystemInfo {
         let processInfo = ProcessInfo.processInfo
         

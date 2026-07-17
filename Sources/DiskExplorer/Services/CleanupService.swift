@@ -15,24 +15,29 @@ public class CleanupService {
         }
         
         if let error = result.1, result.0[url] == nil {
-            // Fallback to AppleScript if NSWorkspace fails (often due to missing privileges)
-            let scriptSource = """
-            tell application "Finder"
-                delete POSIX file "\(url.path)"
-            end tell
-            """
-            if let script = NSAppleScript(source: scriptSource) {
-                var errorInfo: NSDictionary?
-                script.executeAndReturnError(&errorInfo)
-                if let errorInfo = errorInfo {
-                    let errorMessage = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown AppleScript error"
-                    throw NSError(domain: "CleanupServiceError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Finder failed to trash item: \(errorMessage)"])
+            let nsError = error as NSError
+            if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteNoPermissionError {
+                if !SystemInfoService.hasFullDiskAccess {
+                    throw NSError(domain: "CleanupServiceError", code: 513, userInfo: [NSLocalizedDescriptionKey: "Permission denied. Please enable Full Disk Access for Disk Explorer in System Settings > Privacy & Security to delete this item."])
+                } else {
+                    // We have FDA, but still lack permission. Likely a root-owned file.
+                    // Fallback to rm -rf with admin privileges.
+                    let safePath = url.path.replacingOccurrences(of: "'", with: "'\\''")
+                    let scriptSource = """
+                    do shell script "rm -rf '\(safePath)'" with administrator privileges
+                    """
+                    if let script = NSAppleScript(source: scriptSource) {
+                        var errorInfo: NSDictionary?
+                        script.executeAndReturnError(&errorInfo)
+                        if let errorInfo = errorInfo {
+                            let errorMessage = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown AppleScript error"
+                            throw NSError(domain: "CleanupServiceError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to delete item with admin privileges: \(errorMessage)"])
+                        }
+                        return url // Return the original URL to indicate success
+                    }
                 }
-                // We don't get the trashed URL back easily from AppleScript, but we know it succeeded
-                return nil
-            } else {
-                throw error
             }
+            throw error
         }
         return result.0[url]
     }

@@ -12,6 +12,14 @@ public struct FileCategories {
             return (.applications, "Installed application. Use 'Deep Clean' to fully remove it and its associated caches/preferences.")
         }
         
+        // Exemption: Update Staging & Xcode Caches (Safe to delete)
+        if path.hasPrefix("/System/Volumes/Data/macOS Install Data/UpdateBundle") || path.hasPrefix("/Library/Updates") {
+            return (.caches, "macOS update staging packages. Safe to delete to free up space if an update is not currently in progress.")
+        }
+        if path.hasPrefix("/Library/Caches/com.apple.dt.Xcode") {
+            return (.caches, "Xcode system cache. Safe to delete.")
+        }
+        
         // 2. System
         if path.hasPrefix("/System/") || path.hasPrefix("/sbin/") || path.hasPrefix("/bin/") || path.hasPrefix("/usr/bin/") || path.hasPrefix("/usr/sbin/") || path.hasPrefix("/private/var/vm") || name == ".DS_Store" {
             return (.system, "macOS system files or crucial OS components. Do not delete.")
