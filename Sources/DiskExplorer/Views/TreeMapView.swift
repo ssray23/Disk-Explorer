@@ -13,7 +13,9 @@ public struct TreeMapView: View {
     let onDrillDown: (FileNode) -> Void
     var onGoUp: (() -> Void)? = nil
     
-    @State private var hoveredNodeID: UUID? = nil
+    @State private var hoveredNodeID: UUID?
+    @State private var lastTapTime: Date = Date.distantPast
+    @State private var lastTapItem: UUID? = nil
     
     public init(node: FileNode, selectedNode: FileNode?, flatItems: [FileNode]? = nil, onSelect: @escaping (FileNode) -> Void, onDrillDown: @escaping (FileNode) -> Void, onGoUp: (() -> Void)? = nil) {
         self.node = node
@@ -82,13 +84,20 @@ public struct TreeMapView: View {
                                     hoveredNodeID = nil
                                 }
                             }
-                            .onTapGesture(count: 2) {
-                                if tmRect.node.isDirectory {
-                                    onDrillDown(tmRect.node)
+                            .onTapGesture {
+                                let now = Date()
+                                if now.timeIntervalSince(lastTapTime) < 0.3 && lastTapItem == tmRect.node.id {
+                                    // Double tap
+                                    if tmRect.node.isDirectory {
+                                        onDrillDown(tmRect.node)
+                                    }
+                                    lastTapTime = Date.distantPast
+                                } else {
+                                    // Single tap
+                                    onSelect(tmRect.node)
+                                    lastTapItem = tmRect.node.id
+                                    lastTapTime = now
                                 }
-                            }
-                            .onTapGesture(count: 1) {
-                                onSelect(tmRect.node)
                             }
                             .help("\(tmRect.node.name)\n\(ByteFormatter.format(tmRect.node.size))" + (tmRect.node.isDirectory ? "\n(Double-click to open)" : ""))
                         }

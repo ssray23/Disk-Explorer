@@ -10,6 +10,9 @@ public class ScanViewModel: ObservableObject {
     @Published public var selectedNode: FileNode?
     @Published public var isScanning: Bool = false
     @Published public var scanError: String?
+    @Published public var actionMessageTitle: String?
+    @Published public var actionMessageBody: String?
+    @Published public var showActionMessage: Bool = false
     @Published public var currentPath: [FileNode] = [] // For breadcrumbs/drill-down
     @Published public var showFilesOnly: Bool = false
     
@@ -103,6 +106,9 @@ public class ScanViewModel: ObservableObject {
             removeFromTreeAndAdvanceSelection(node)
             print("Successfully trashed \(node.name)")
         } catch {
+            self.actionMessageTitle = "Action Failed"
+            self.actionMessageBody = "Failed to trash \(node.name): \(error.localizedDescription)"
+            self.showActionMessage = true
             print("Failed to trash: \(error)")
         }
     }
@@ -119,11 +125,20 @@ public class ScanViewModel: ObservableObject {
             print("Failed to trash \(url.lastPathComponent) during deep clean: \(error)")
         }
         
-        // Only remove the node from the tree if the app bundle itself actually made it to the Trash.
-        // If only some associated files failed, we still count this as success since the app is gone.
         if result.trashed.contains(node.path) {
             removeFromTreeAndAdvanceSelection(node)
+            self.actionMessageTitle = "Deep Clean Successful"
+            self.actionMessageBody = "Successfully deep cleaned \(node.name).\n\(result.trashed.count) item(s) were moved to the Trash."
+            self.showActionMessage = true
             print("Deep cleaned \(node.name): removed \(result.trashed.count) item(s)")
+        } else if let appError = result.errors.first(where: { $0.url == node.path }) {
+            self.actionMessageTitle = "Action Failed"
+            self.actionMessageBody = "Failed to deep clean \(node.name): \(appError.error.localizedDescription)"
+            self.showActionMessage = true
+        } else {
+            self.actionMessageTitle = "Action Failed"
+            self.actionMessageBody = "Failed to deep clean \(node.name): Unknown error"
+            self.showActionMessage = true
         }
     }
     

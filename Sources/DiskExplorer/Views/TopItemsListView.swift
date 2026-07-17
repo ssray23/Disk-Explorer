@@ -19,11 +19,13 @@ public struct TopItemsListView: View {
     }
     
     @State private var cachedItems: [FileNode] = []
+    @State private var lastTapTime: Date = Date.distantPast
+    @State private var lastTapItem: UUID? = nil
     
-    private func updateCachedItems(showFiles: Bool) {
+    private func updateCachedItems(showFiles: Bool) async {
         let root = rootNode
         
-        Task.detached {
+        let result = await Task.detached(priority: .userInitiated) { () -> [FileNode]? in
             var allItems: [FileNode] = []
             
             // If showFiles is true, recursively find all files in the subtree.
@@ -34,8 +36,9 @@ public struct TopItemsListView: View {
                     stack.append(contentsOf: children)
                 }
                 
+                var counter = 0
                 while !stack.isEmpty {
-                    if Task.isCancelled { return }
+                    if Task.isCancelled { return nil }
                     
                     let node = stack.removeLast()
                     
@@ -46,6 +49,11 @@ public struct TopItemsListView: View {
                     if let children = node.children {
                         stack.append(contentsOf: children)
                     }
+                    
+                    counter += 1
+                    if counter % 1000 == 0 {
+                        await Task.yield()
+                    }
                 }
             } else {
                 if let children = root.children {
@@ -54,14 +62,14 @@ public struct TopItemsListView: View {
                 }
             }
             
-            if Task.isCancelled { return }
+            if Task.isCancelled { return nil }
             allItems.sort { $0.size > $1.size }
             
             var uniqueItems: [FileNode] = []
             var seenPaths: Set<URL> = []
             
             for item in allItems {
-                if Task.isCancelled { return }
+                if Task.isCancelled { return nil }
                 if !seenPaths.contains(item.path) {
                     seenPaths.insert(item.path)
                     uniqueItems.append(item)
@@ -69,13 +77,12 @@ public struct TopItemsListView: View {
                 if uniqueItems.count >= 150 { break }
             }
             
-            if Task.isCancelled { return }
-            let finalItems = uniqueItems
-            await MainActor.run {
-                self.cachedItems = finalItems
-                self.onListUpdated?(finalItems)
-            }
-        }
+            return uniqueItems
+        }.value
+        
+        guard !Task.isCancelled, let finalItems = result else { return }
+        self.cachedItems = finalItems
+        self.onListUpdated?(finalItems)
     }
     
     public var body: some View {
@@ -170,20 +177,27 @@ public struct TopItemsListView: View {
                 .padding(.horizontal, 8)
                 .background(item.id == selectedNode?.id ? Color.accentColor.opacity(0.15) : Color.clear)
                 .cornerRadius(8)
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) {
-                    if item.isDirectory {
-                        onDoubleTap?(item)
+                .onTapGesture {
+                    let now = Date()
+                    if now.timeIntervalSince(lastTapTime) < 0.3 && lastTapItem == item.id {
+                        // Double tap
+                        if item.isDirectory {
+                            onDoubleTap?(item)
+                        }
+                        // Reset to prevent triple-tap firing double-tap twice
+                        lastTapTime = Date.distantPast
+                    } else {
+                        // Single tap
+                        onSelect(item)
+                        lastTapItem = item.id
+                        lastTapTime = now
                     }
-                }
-                .onTapGesture(count: 1) {
-                    onSelect(item)
                 }
             }
             .listStyle(.inset)
         }
         .task(id: "\(rootNode.id)-\(rootNode.version)-\(showFilesOnly)") {
-            updateCachedItems(showFiles: showFilesOnly)
+            await updateCachedItems(showFiles: showFilesOnly)
         }
     }
 }

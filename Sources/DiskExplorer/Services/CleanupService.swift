@@ -4,10 +4,37 @@ import AppKit
 public class CleanupService {
     
     /// Moves a file to the Trash using NSWorkspace, allowing it to be recovered by the user.
+    /// If NSWorkspace fails (e.g. due to permissions), it falls back to AppleScript to ask Finder
+    /// to do it, which will natively prompt for an administrator password if necessary.
+    @discardableResult
     public static func moveToTrash(url: URL) async throws -> URL? {
-        var resultingURL: NSURL? = nil
-        try FileManager.default.trashItem(at: url, resultingItemURL: &resultingURL)
-        return resultingURL as URL?
+        let result = await withCheckedContinuation { continuation in
+            NSWorkspace.shared.recycle([url]) { trashedURLs, error in
+                continuation.resume(returning: (trashedURLs, error))
+            }
+        }
+        
+        if let error = result.1, result.0[url] == nil {
+            // Fallback to AppleScript if NSWorkspace fails (often due to missing privileges)
+            let scriptSource = """
+            tell application "Finder"
+                delete POSIX file "\(url.path)"
+            end tell
+            """
+            if let script = NSAppleScript(source: scriptSource) {
+                var errorInfo: NSDictionary?
+                script.executeAndReturnError(&errorInfo)
+                if let errorInfo = errorInfo {
+                    let errorMessage = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown AppleScript error"
+                    throw NSError(domain: "CleanupServiceError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Finder failed to trash item: \(errorMessage)"])
+                }
+                // We don't get the trashed URL back easily from AppleScript, but we know it succeeded
+                return nil
+            } else {
+                throw error
+            }
+        }
+        return result.0[url]
     }
     
     /// Reveals the file in Finder
@@ -52,13 +79,12 @@ public class CleanupService {
     }
     
     /// Trashes an app's associated caches/preferences/support files, then the app bundle itself.
-    /// Returns the URLs that were successfully trashed and any errors encountered along the way,
-    /// so the caller can report partial failures instead of silently continuing.
+    /// Uses NSWorkspace.shared.recycle individually so that a failure in one cache file doesn't abort the app deletion.
     @discardableResult
     public static func deepClean(appURL: URL) async -> (trashed: [URL], errors: [(url: URL, error: Error)]) {
         var trashed: [URL] = []
         var errors: [(url: URL, error: Error)] = []
-
+        
         for associatedURL in getAppAssociatedFiles(appURL: appURL) {
             do {
                 _ = try await moveToTrash(url: associatedURL)
@@ -67,14 +93,14 @@ public class CleanupService {
                 errors.append((associatedURL, error))
             }
         }
-
+        
         do {
             _ = try await moveToTrash(url: appURL)
             trashed.append(appURL)
         } catch {
             errors.append((appURL, error))
         }
-
+        
         return (trashed, errors)
     }
 

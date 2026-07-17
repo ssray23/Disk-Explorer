@@ -69,36 +69,44 @@ public struct CategoryHistogramView: View {
         .padding(16)
         .background(Color(NSColor.controlBackgroundColor))
         .task(id: "\(rootNode.id)-\(rootNode.version)") {
-            calculateSizes()
+            await calculateSizes()
         }
     }
     
-    private func calculateSizes() {
+    private func calculateSizes() async {
         isCalculating = true
         currentRootID = rootNode.id
         
         let node = rootNode
         
-        Task.detached {
+        let result = await Task.detached(priority: .userInitiated) { () -> [(category: FileCategory, size: Int64)]? in
             var sizes: [FileCategory: Int64] = [:]
-            func aggregate(n: FileNode) {
+            var stack: [FileNode] = [node]
+            var counter = 0
+            
+            while !stack.isEmpty {
+                if Task.isCancelled { return nil }
+                
+                let n = stack.removeLast()
                 if !n.isDirectory {
                     sizes[n.category, default: 0] += n.size
                 } else if let children = n.children {
-                    for child in children {
-                        aggregate(n: child)
-                    }
+                    stack.append(contentsOf: children)
+                }
+                
+                counter += 1
+                if counter % 1000 == 0 {
+                    await Task.yield() // Prevent CPU starvation
                 }
             }
-            aggregate(n: node)
-            let result: [(category: FileCategory, size: Int64)] = sizes.map { (category: $0.key, size: $0.value) }
+            
+            return sizes.map { (category: $0.key, size: $0.value) }
                 .filter { $0.size > 0 }
                 .sorted { $0.size > $1.size }
-            
-            await MainActor.run {
-                self.categorySizes = result
-                self.isCalculating = false
-            }
-        }
+        }.value
+        
+        guard !Task.isCancelled, let finalResult = result else { return }
+        self.categorySizes = finalResult
+        self.isCalculating = false
     }
 }

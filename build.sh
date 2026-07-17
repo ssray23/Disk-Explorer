@@ -16,6 +16,33 @@ mkdir -p "Disk Explorer.app/Contents/Resources"
 echo "📦 Copying binary to app bundle..."
 cp .build/release/DiskExplorer "Disk Explorer.app/Contents/MacOS/Disk Explorer"
 
+# Create Info.plist with necessary permissions for AppleScript
+echo "📝 Creating Info.plist..."
+cat << 'EOF' > "Disk Explorer.app/Contents/Info.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.diskexplorer.app</string>
+    <key>CFBundleName</key>
+    <string>Disk Explorer</string>
+    <key>CFBundleExecutable</key>
+    <string>Disk Explorer</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Disk Explorer needs permission to control the Finder in order to move protected applications and their caches to the Trash.</string>
+</dict>
+</plist>
+EOF
+
 # Touch the app bundle so Finder registers the changes
 touch "Disk Explorer.app"
 

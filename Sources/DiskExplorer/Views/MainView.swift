@@ -254,6 +254,13 @@ public struct MainView: View {
                 .ignoresSafeArea(.all, edges: .top)
             }
         }
+        .alert(isPresented: $viewModel.showActionMessage) {
+            Alert(
+                title: Text(viewModel.actionMessageTitle ?? "Message"),
+                message: Text(viewModel.actionMessageBody ?? ""),
+                dismissButton: .default(Text("OK"))
+            )
+        }
     }
 }
 
