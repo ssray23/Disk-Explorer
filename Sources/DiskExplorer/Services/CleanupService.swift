@@ -2,22 +2,22 @@ import Foundation
 import AppKit
 
 public class CleanupService {
+    private static let trashOperations = FinderTrashOperations()
     
-    /// Moves a file to the Trash using NSWorkspace, allowing it to be recovered by the user.
-    /// If NSWorkspace fails (e.g. due to permissions), it falls back to AppleScript to ask Finder
-    /// to do it, which will natively prompt for an administrator password if necessary.
+    /// Moves a file to the Trash, allowing it to be recovered by the user.
+    /// Finder performs the same FileProvider-aware trash coordination that succeeds when the
+    /// user trashes the item manually from Finder, including iCloud Desktop/Documents items.
     @discardableResult
     public static func moveToTrash(url: URL) async throws -> URL? {
         ScanViewModel.writeLog("[CleanupService] moveToTrash started for \(url.path)")
         do {
-            var resultingURL: NSURL?
-            ScanViewModel.writeLog("[CleanupService] Calling FileManager.default.trashItem...")
-            try FileManager.default.trashItem(at: url, resultingItemURL: &resultingURL)
-            ScanViewModel.writeLog("[CleanupService] FileManager.default.trashItem succeeded. Resulting URL: \(String(describing: resultingURL))")
-            return resultingURL as URL?
+            ScanViewModel.writeLog("[CleanupService] Asking Finder to move item to Trash...")
+            let resultingURL = try await trashOperations.moveToTrash(url)
+            ScanViewModel.writeLog("[CleanupService] Finder trash operation succeeded. Resulting URL: \(String(describing: resultingURL))")
+            return resultingURL
         } catch let error {
             let nsError = error as NSError
-            ScanViewModel.writeLog("[CleanupService] FileManager.default.trashItem failed with error: \(nsError.domain) (\(nsError.code)): \(nsError.localizedDescription)")
+            ScanViewModel.writeLog("[CleanupService] Finder trash operation failed with error: \(nsError.domain) (\(nsError.code)): \(nsError.localizedDescription)")
             
             // If the error says the file doesn't exist, it is already gone.
             if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileNoSuchFileError {
@@ -101,7 +101,7 @@ public class CleanupService {
     }
     
     /// Trashes an app's associated caches/preferences/support files, then the app bundle itself.
-    /// Uses NSWorkspace.shared.recycle individually so that a failure in one cache file doesn't abort the app deletion.
+    /// Trashes each item individually so a failure in one cache file doesn't abort the app deletion.
     @discardableResult
     public static func deepClean(appURL: URL) async -> (trashed: [URL], errors: [(url: URL, error: Error)]) {
         var trashed: [URL] = []
@@ -133,5 +133,59 @@ public class CleanupService {
             return nil
         }
         return plist["CFBundleIdentifier"] as? String
+    }
+}
+
+/// Bridges Finder's synchronous AppleEvent handling into Swift concurrency without blocking
+/// the main actor. Finder already handles the FileProvider-backed trash path correctly.
+private final class FinderTrashOperations: @unchecked Sendable {
+    private let queue = DispatchQueue(
+        label: "com.diskexplorer.finder-trash",
+        qos: .userInitiated
+    )
+
+    func moveToTrash(_ url: URL) async throws -> URL? {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                autoreleasepool {
+                    let scriptSource = """
+                    tell application "Finder"
+                        delete POSIX file \(Self.appleScriptStringLiteral(url.path))
+                    end tell
+                    """
+
+                    guard let script = NSAppleScript(source: scriptSource) else {
+                        continuation.resume(throwing: NSError(
+                            domain: "CleanupServiceError",
+                            code: -3,
+                            userInfo: [NSLocalizedDescriptionKey: "Could not create Finder trash request."]
+                        ))
+                        return
+                    }
+
+                    var errorInfo: NSDictionary?
+                    script.executeAndReturnError(&errorInfo)
+
+                    if let errorInfo {
+                        let message = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown Finder AppleScript error"
+                        let code = (errorInfo[NSAppleScript.errorNumber] as? NSNumber)?.intValue ?? -4
+                        continuation.resume(throwing: NSError(
+                            domain: "CleanupServiceError",
+                            code: code,
+                            userInfo: [NSLocalizedDescriptionKey: message]
+                        ))
+                    } else {
+                        continuation.resume(returning: url)
+                    }
+                }
+            }
+        }
+    }
+
+    private static func appleScriptStringLiteral(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
     }
 }

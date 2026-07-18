@@ -20,7 +20,7 @@ Helper files that perform isolated, stateless transformations.
 Services handle the heavy-lifting, file-system I/O, and asynchronous tasks, offloading work from the main thread.
 - **`DiskScanner.swift`**: Contains the highly parallelized core scanning engine. It uses `FileManager.enumerator` to crawl the disk, safely bypassing macOS firmlinks by resolving physical URLs. It builds the hierarchical `FileNode` tree recursively.
 - **`SystemInfoService.swift`**: Interfaces with the lower-level Darwin layers and `URLResourceValues` to fetch the overall Macintosh HD volume metrics, memory size, CPU type, and OS version.
-- **`CleanupService`**: Securely handles the deletion of files and folders using `NSWorkspace` to bypass the sandbox, moving items to the `.Trash` directory.
+- **`CleanupService`**: Moves files and folders to Trash by asking Finder through an Apple Event. A private serial queue bridges Finder's synchronous request into Swift concurrency, keeping the main actor responsive and using Finder's File Provider-aware trash implementation for cloud-backed items. See [`docs/trashing-fileprovider-items.md`](docs/trashing-fileprovider-items.md) for the failure analysis and operational details.
 
 ## 5. ViewModels
 ViewModels act as the bridge between the Services and the Views, holding `@Published` state that drives the SwiftUI interfaces.

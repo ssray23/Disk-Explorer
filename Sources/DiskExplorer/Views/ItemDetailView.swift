@@ -8,12 +8,14 @@ public struct ItemDetailView: View {
     @State private var previewImage: NSImage?
     
     let node: FileNode
+    let isProcessing: Bool
     let onTrash: () -> Void
     let onReveal: () -> Void
     let onDeepClean: () -> Void
     
-    public init(node: FileNode, onTrash: @escaping () -> Void, onReveal: @escaping () -> Void, onDeepClean: @escaping () -> Void) {
+    public init(node: FileNode, isProcessing: Bool, onTrash: @escaping () -> Void, onReveal: @escaping () -> Void, onDeepClean: @escaping () -> Void) {
         self.node = node
+        self.isProcessing = isProcessing
         self.onTrash = onTrash
         self.onReveal = onReveal
         self.onDeepClean = onDeepClean
@@ -147,20 +149,26 @@ public struct ItemDetailView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.purple)
-                    .disabled(node.category == .system)
+                    .disabled(node.category == .system || isProcessing)
                 }
                 
                 Button(action: onTrash) {
                     HStack {
-                        Image(systemName: "trash")
-                        Text("Move to Trash")
+                        if isProcessing {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Moving to Trash...")
+                        } else {
+                            Image(systemName: "trash")
+                            Text("Move to Trash")
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
-                .disabled(node.category == .system)
+                .disabled(node.category == .system || isProcessing)
                 
                 Button(action: onReveal) {
                     HStack {
@@ -171,6 +179,7 @@ public struct ItemDetailView: View {
                     .padding(.vertical, 8)
                 }
                 .buttonStyle(.bordered)
+                .disabled(isProcessing)
                 
                 Button(action: {
                     if let query = node.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
@@ -186,6 +195,7 @@ public struct ItemDetailView: View {
                     .padding(.vertical, 8)
                 }
                 .buttonStyle(.bordered)
+                .disabled(isProcessing)
             }
             .padding()
             .background(Color(NSColor.windowBackgroundColor))

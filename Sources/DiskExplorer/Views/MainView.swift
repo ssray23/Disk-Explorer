@@ -253,6 +253,7 @@ public struct MainView: View {
             if viewMode == .explorer, let selectedNode = viewModel.selectedNode {
                 ItemDetailView(
                     node: selectedNode,
+                    isProcessing: viewModel.isProcessing,
                     onTrash: {
                         Task {
                             await viewModel.trashSelectedNode()

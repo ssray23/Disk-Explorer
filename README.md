@@ -115,7 +115,7 @@ The ViewModels orchestrate communication between background services and the mai
 
 ### 3. Service Layer
 - **`DiskScanner`**: A highly parallelized service utilizing `FileManager.enumerator` and Swift 6 `Synchronization.Mutex` for thread-safe state management. Calculates sizes utilizing native `allocatedFileSizeKey` to capture true blocks-on-disk measurements.
-- **`CleanupService`**: Uses `NSWorkspace` to securely bypass sandbox constraints and perform unrecoverable `.Trash` relocation routines.
+- **`CleanupService`**: Delegates recoverable Trash operations to Finder on a background serial queue. This uses Finder's File Provider-aware path for iCloud Drive and other cloud-backed locations without blocking the SwiftUI main actor.
 - **`SystemInfoService`**: Interfaces tightly with standard macOS Darwin layers and `URLResourceValues` to track true device capacity dynamically.
 
 ### 4. Models
@@ -150,7 +150,9 @@ Disk Explorer is distributed as a Swift Package that builds into a standalone ma
    *Note: If you get a permission error, make the script executable first by running `chmod +x build.sh`.*
 
 3. **Launch the App**:
-   The script will compile the Swift code and bundle it into `Disk Explorer.app`. You can double-click this app in Finder to launch it, or drag it into your `/Applications` folder!
+   The script compiles the Swift code, creates the signed bundle, and installs it at `~/Applications/Disk Explorer.app`. Launch that local copy rather than creating or running an app bundle inside a cloud-synced source folder.
 
 ### Permissions
-Upon first launch, navigate to **Disk Explorer > Settings** (`Cmd + ,`) and follow the instructions to grant the app **Full Disk Access**. This ensures the scanner can see all files on your drive, rather than having its view restricted by macOS sandboxing.
+Upon first launch, navigate to **Disk Explorer > Settings** (`Cmd + ,`) and follow the instructions to grant the app **Full Disk Access**. This ensures the scanner can see protected locations. On the first Move to Trash action, macOS may separately ask for permission to control Finder; allow it under **System Settings > Privacy & Security > Automation**.
+
+For the File Provider failure analysis, implementation details, permissions, and troubleshooting steps, see [Trashing Files and Folders Safely](docs/trashing-fileprovider-items.md).
