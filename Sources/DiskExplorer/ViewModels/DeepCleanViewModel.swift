@@ -2,12 +2,13 @@ import Foundation
 import Combine
 import AppKit
 
-public enum CleanActionType: Equatable {
+public enum CleanActionType: Equatable, Sendable {
     case path(URL, deleteEntireFolder: Bool)
     case command(scan: String, clean: String)
+    case complex(paths: [URL], userClean: String, adminClean: String)
 }
 
-public struct JunkCategory: Identifiable {
+public struct JunkCategory: Identifiable, Sendable {
     public let id = UUID()
     public let name: String
     public let description: String
@@ -105,6 +106,24 @@ public class DeepCleanViewModel: ObservableObject {
             initialCategories.append(JunkCategory(name: "Local Time Machine Snapshots", description: "Local snapshots created during updates.", isSelected: false, needsAdmin: true, actionType: .command(scan: "tmutil listlocalsnapshots / 2>/dev/null | grep -c 'com.apple.TimeMachine'", clean: "tmutil listlocalsnapshots / 2>/dev/null | grep 'com.apple.TimeMachine' | while read -r snap; do sudo tmutil deletelocalsnapshots \"${snap##*.}\" 2>/dev/null; done")))
         }
         
+        // 8. Spotlight and Knowledge Caches
+        let spotlightUserClean = "rm -rf '\(homeDir.path)/Library/Metadata/CoreSpotlight'; rm -rf '\(homeDir.path)/Library/Application Support/Knowledge'/knowledgeC.db*"
+        let spotlightAdminClean = "killall mds mds_stores 2>/dev/null; mdutil -E /."
+        let spotlightPaths = [
+            homeDir.appendingPathComponent("Library/Metadata/CoreSpotlight"),
+            homeDir.appendingPathComponent("Library/Application Support/Knowledge/knowledgeC.db"),
+            homeDir.appendingPathComponent("Library/Application Support/Knowledge/knowledgeC.db-shm"),
+            homeDir.appendingPathComponent("Library/Application Support/Knowledge/knowledgeC.db-wal")
+        ]
+        
+        initialCategories.append(JunkCategory(
+            name: "Spotlight & Knowledge Caches",
+            description: "Clears Spotlight search index and Siri Knowledge databases to fix search issues or free up space.",
+            isSelected: false,
+            needsAdmin: true,
+            actionType: .complex(paths: spotlightPaths, userClean: spotlightUserClean, adminClean: spotlightAdminClean)
+        ))
+        
         categories = initialCategories
     }
     
@@ -142,6 +161,12 @@ public class DeepCleanViewModel: ObservableObject {
                 if let count = Int(output.trimmingCharacters(in: .whitespacesAndNewlines)) {
                     updatedCategories[i].count = count
                 }
+            case .complex(let paths, _, _):
+                var totalSize: Int64 = 0
+                for path in paths {
+                    totalSize += await calculateSize(of: path)
+                }
+                updatedCategories[i].size = totalSize
             }
         }
         
@@ -152,75 +177,93 @@ public class DeepCleanViewModel: ObservableObject {
     public func clean() async {
         isCleaning = true
         errorMessage = nil
-        let fileManager = FileManager.default
         
-        var adminPathsToDelete: [String] = []
-        var adminCommandsToRun: [String] = []
+        let selectedCategories = categories.filter { $0.isSelected }
         
-        for category in categories where category.isSelected {
-            switch category.actionType {
-            case .path(let path, let deleteEntireFolder):
-                if category.needsAdmin {
-                    adminPathsToDelete.append(path.path)
-                } else {
-                    do {
-                        if deleteEntireFolder {
-                            try fileManager.removeItem(at: path)
-                        } else {
-                            let contents = try fileManager.contentsOfDirectory(at: path, includingPropertiesForKeys: nil)
-                            for item in contents {
-                                try? fileManager.removeItem(at: item)
-                            }
-                        }
-                    } catch {
-                        print("Error cleaning \(category.name): \(error)")
-                        errorMessage = "Failed to clean \(category.name): \(error.localizedDescription)"
-                    }
-                }
-            case .command(_, let cleanCommand):
-                if category.needsAdmin {
-                    adminCommandsToRun.append(cleanCommand)
-                } else {
-                    _ = runShellCommand(cleanCommand)
-                }
-            }
-        }
-        
-        // Execute admin batch commands using AppleScript
-        if !adminPathsToDelete.isEmpty || !adminCommandsToRun.isEmpty {
-            var scriptCommands: [String] = []
+        let resultError = await Task.detached {
+            let fileManager = FileManager.default
+            var adminPathsToDelete: [String] = []
+            var adminCommandsToRun: [String] = []
+            var resultingErrorMessage: String? = nil
             
-            for path in adminPathsToDelete {
-                let safePath = path.replacingOccurrences(of: "'", with: "'\\''")
-                scriptCommands.append("rm -rf '\(safePath)'")
-            }
-            
-            for command in adminCommandsToRun {
-                // If the bash command itself uses sudo, we can just run it without sudo in the AppleScript since AppleScript executes as root
-                let cleanCommand = command.replacingOccurrences(of: "sudo ", with: "")
-                scriptCommands.append(cleanCommand)
-            }
-            
-            let combinedCommand = scriptCommands.joined(separator: "; ")
-            let safeCombinedCommand = combinedCommand.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            
-            let scriptSource = """
-            do shell script "\(safeCombinedCommand)" with administrator privileges
-            """
-            
-            if let script = NSAppleScript(source: scriptSource) {
-                var errorInfo: NSDictionary?
-                script.executeAndReturnError(&errorInfo)
-                if let errorInfo = errorInfo {
-                    let msg = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown error"
-                    print("AppleScript admin delete failed: \(msg)")
-                    if msg.contains("Operation not permitted") {
-                        errorMessage = "Some files could not be deleted because they are protected by macOS System Integrity Protection (SIP)."
+            for category in selectedCategories {
+                switch category.actionType {
+                case .path(let path, let deleteEntireFolder):
+                    if category.needsAdmin {
+                        adminPathsToDelete.append(path.path)
                     } else {
-                        errorMessage = "Administrator deletion failed: \(msg)"
+                        do {
+                            if deleteEntireFolder {
+                                try fileManager.removeItem(at: path)
+                            } else {
+                                let contents = try fileManager.contentsOfDirectory(at: path, includingPropertiesForKeys: nil)
+                                for item in contents {
+                                    try? fileManager.removeItem(at: item)
+                                }
+                            }
+                        } catch {
+                            print("Error cleaning \(category.name): \(error)")
+                            resultingErrorMessage = "Failed to clean \(category.name): \(error.localizedDescription)"
+                        }
+                    }
+                case .command(_, let cleanCommand):
+                    if category.needsAdmin {
+                        adminCommandsToRun.append(cleanCommand)
+                    } else {
+                        _ = self.runShellCommand(cleanCommand)
+                    }
+                case .complex(_, let userClean, let adminClean):
+                    _ = self.runShellCommand(userClean)
+                    if category.needsAdmin {
+                        adminCommandsToRun.append(adminClean)
+                    } else {
+                        _ = self.runShellCommand(adminClean)
                     }
                 }
             }
+            
+            // Execute admin batch commands using AppleScript
+            if !adminPathsToDelete.isEmpty || !adminCommandsToRun.isEmpty {
+                var scriptCommands: [String] = []
+                
+                for path in adminPathsToDelete {
+                    let safePath = path.replacingOccurrences(of: "'", with: "'\\''")
+                    scriptCommands.append("rm -rf '\(safePath)'")
+                }
+                
+                for command in adminCommandsToRun {
+                    // If the bash command itself uses sudo, we can just run it without sudo in the AppleScript since AppleScript executes as root
+                    let cleanCommand = command.replacingOccurrences(of: "sudo ", with: "")
+                    scriptCommands.append(cleanCommand)
+                }
+                
+                let combinedCommand = scriptCommands.joined(separator: "; ")
+                let safeCombinedCommand = combinedCommand.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+                
+                let scriptSource = """
+                do shell script "\(safeCombinedCommand)" with administrator privileges
+                """
+                
+                if let script = NSAppleScript(source: scriptSource) {
+                    var errorInfo: NSDictionary?
+                    script.executeAndReturnError(&errorInfo)
+                    if let errorInfo = errorInfo {
+                        let msg = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown error"
+                        print("AppleScript admin delete failed: \(msg)")
+                        if msg.contains("Operation not permitted") {
+                            resultingErrorMessage = "Some files could not be deleted because they are protected by macOS System Integrity Protection (SIP)."
+                        } else {
+                            resultingErrorMessage = "Administrator deletion failed: \(msg)"
+                        }
+                    }
+                }
+            }
+            
+            return resultingErrorMessage
+        }.value
+        
+        if let error = resultError {
+            self.errorMessage = error
         }
         
         await scan()
