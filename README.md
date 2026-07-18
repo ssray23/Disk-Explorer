@@ -20,6 +20,7 @@ graph TD
         List[TopItemsListView.swift]
         Detail[ItemDetailView.swift]
         DeepClean[DeepCleanView.swift]
+        Picker[CustomFolderPicker.swift]
     end
 
     subgraph View Models
@@ -53,6 +54,7 @@ graph TD
     Main --> List
     Main --> Detail
     Main --> DeepClean
+    Main --> Picker
     
     DeepClean --> DCVM
     DCVM --> CleanSvc
@@ -104,6 +106,7 @@ The presentation layer is strictly declarative. The `MainView` handles structura
 - **`TreeMapView`**: Implements a squarified treemap layout algorithm dynamically computing layout bounds through `GeometryReader`.
 - **`TopItemsListView`**: Displays the largest items utilizing a highly optimized, iterative tree-traversal array mechanism. By migrating away from recursive functions into an iterative stack implementation on detached background tasks, we strictly prevent thread stack overflows when analyzing deeply nested node trees. 
 - **`ItemDetailView`**: Presents an edge-to-edge inspector pane utilizing a `NavigationSplitView` architecture. To bypass restrictive macOS `NSVisualEffectView` Vibrancy blending engine (which often washes out standard `.bordered` buttons atop `.regularMaterial`), we deploy custom `.plain` button styles with strict opaque rendering parameters. Integrates deeply with the macOS environment, invoking `NSWorkspace.shared.open` and `@Environment(\.openURL)` to bridge native web searches and Finder revelation commands dynamically.
+- **`CustomFolderPicker`**: A borderless, movable, glassmorphic window designed specifically to bypass Sequoia `NSOpenPanel` freeze. It dynamically queries iCloud Drive and other directories in the sidebar, utilizes a custom 0ms latency tap gesture system for instant selection response, and matches native Finder window layouts.
 
 ### 2. ViewModel Layer
 The ViewModels orchestrate communication between background services and the main UI thread. They utilize modern Swift 6 `@Observable` macros for highly efficient, granular UI updates.
@@ -125,6 +128,8 @@ The ViewModels orchestrate communication between background services and the mai
 - **Largest Items List**: Instantly see the largest individual files and folders within any directory, complete with inline visual histogram bars representing their relative sizes. Also correctly delineates deep firmlinks, rendering both standard logical bounds and underlying physical data routes.
 - **Safety First Design**: Built-in protections automatically disable deletion functionality for critical OS `.system` files, preventing accidental data loss.
 - **Deep Clean**: A dedicated dashboard to safely find and permanently delete gigabytes of hidden system junk, user caches, logs, Xcode derived data, and Trash. Notifies root models synchronously on completion to instantly trigger graphical re-renders of disk capacity.
+- **Custom Folder Picker**: Designed to bypass macOS Sequoia dialog freezes. It displays cloud locations (iCloud Drive, OneDrive, Google Drive), internal and external volumes, and supports instant 0ms row selections via custom gesture mapping.
+- **Drag & Drop Scan**: Supports dragging any folder or drive from Finder directly into the ready-to-scan window view to initiate scans instantly.
 
 ## Installation & Building
 

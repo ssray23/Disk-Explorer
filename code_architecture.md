@@ -37,6 +37,7 @@ The declarative SwiftUI presentation layer.
 - **`ItemDetailView.swift`**: The inspector panel anchored to the right side of the screen. It displays detailed metadata for the currently selected file and houses the "Reveal in Finder", "Search Google", and "Move to Trash" action buttons in a rigid bottom footer.
 - **`DeepCleanView.swift`**: The dedicated, isolated dashboard view for scanning and cleaning system caches, logs, and derived data safely.
 - **`SettingsView.swift`**: The app's preferences window, providing instructions and status indicators for granting macOS Full Disk Access.
+- **`CustomFolderPicker.swift`**: The custom resizable, movable, glassmorphic windowed picker view. It bypasses the macOS Sequoia `NSOpenPanel` security-related dialog hang, aggregates cloud directories and external drives, and supports zero-latency row selections.
 
 ## 7. Managers
 - **`PermissionsManager.swift`**: A singleton manager tasked with verifying if the application currently has the elevated "Full Disk Access" macOS privacy permissions required to scan the entire root drive.

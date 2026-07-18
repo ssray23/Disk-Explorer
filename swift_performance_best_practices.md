@@ -105,3 +105,31 @@ func cleanFiles() async {
     isCleaning = false
 }
 ```
+
+## 6. Eliminate Selection Delay in ScrollViews/Lists (Manual Double-Tap Timing)
+By default, SwiftUI's gesture handlers (such as placing a double-tap gesture alongside a single-tap gesture, or using standard interactive selection lists) introduce a **350ms delay** on every single tap. The system waits to verify if the user will perform a second tap (to trigger a double-click) before running the single-click action. This makes list row selections feel sluggish and delayed.
+
+**Best Practice:**
+Implement a manual double-tap detection system within a single, standard tap gesture using a timestamp log. This allows you to run selection logic **instantly** (0ms latency) on the initial tap. If a second tap arrives within a tight window (e.g., `< 0.3` seconds) on the same element, execute the double-tap action (e.g., opening a folder).
+
+```swift
+// ❌ BAD: Delays single taps by 350ms to check for double-taps
+RowView(item)
+    .onTapGesture { select(item) }
+    .onTapGesture(count: 2) { open(item) }
+
+// ✅ GOOD: Single clicks are instant (0ms latency), double clicks traverse dynamically
+RowView(item)
+    .onTapGesture {
+        let now = Date()
+        if now.timeIntervalSince(lastTapTime) < 0.3 && lastTapItem == item {
+            open(item)
+            lastTapTime = Date.distantPast
+        } else {
+            select(item) // Trigger selection instantly!
+            lastTapItem = item
+            lastTapTime = now
+        }
+    }
+```
+
