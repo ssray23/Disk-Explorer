@@ -294,17 +294,38 @@ public class ScanViewModel {
         return nil
     }
 
+    /// Directory for the app's own debug log, kept strictly outside any cloud-synced
+    /// location (iCloud Drive, OneDrive, etc). Writing a rapidly-appended log file inside
+    /// a live-synced folder causes the sync daemon (bird/fileproviderd) to treat every
+    /// write as a change needing upload, which under sustained/concurrent writes (e.g. during
+    /// a crash-restart loop) can desync that folder's local sync state from iCloud's.
+    /// Application Support is local-only and never touched by iCloud/OneDrive sync.
+    private static let logDirectory: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("DiskExplorer", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    private static let logURL: URL = logDirectory.appendingPathComponent("debug.log")
+
+    // Serializes writes so concurrent calls from different threads/tasks can't interleave
+    // seek+write and corrupt or truncate the log file.
+    private static let logLock = NSLock()
+
     nonisolated public static func writeLog(_ message: String) {
-        let logURL = URL(fileURLWithPath: "/Users/suddharay/Library/Mobile Documents/com~apple~CloudDocs/Mac Projects/Disk Explorer (Swift)/debug.log")
         let line = "[\(Date())] \(message)\n"
-        if let data = line.data(using: .utf8) {
-            if let fileHandle = try? FileHandle(forWritingTo: logURL) {
-                fileHandle.seekToEndOfFile()
-                fileHandle.write(data)
-                fileHandle.closeFile()
-            } else {
-                try? data.write(to: logURL)
-            }
+        guard let data = line.data(using: .utf8) else { return }
+
+        logLock.lock()
+        defer { logLock.unlock() }
+
+        if let fileHandle = try? FileHandle(forWritingTo: logURL) {
+            fileHandle.seekToEndOfFile()
+            fileHandle.write(data)
+            fileHandle.closeFile()
+        } else {
+            try? data.write(to: logURL)
         }
     }
 }
