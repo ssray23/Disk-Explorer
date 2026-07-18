@@ -300,19 +300,6 @@ public class ScanViewModel {
     /// write as a change needing upload, which under sustained/concurrent writes (e.g. during
     /// a crash-restart loop) can desync that folder's local sync state from iCloud's.
     /// Application Support is local-only and never touched by iCloud/OneDrive sync.
-    private static let logDirectory: URL = {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("DiskExplorer", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }()
-
-    private static let logURL: URL = logDirectory.appendingPathComponent("debug.log")
-
-    // Serializes writes so concurrent calls from different threads/tasks can't interleave
-    // seek+write and corrupt or truncate the log file.
-    private static let logLock = NSLock()
-
     nonisolated public static func writeLog(_ message: String) {
         let line = "[\(Date())] \(message)\n"
         guard let data = line.data(using: .utf8) else { return }
@@ -329,3 +316,13 @@ public class ScanViewModel {
         }
     }
 }
+
+private let logDirectory: URL = {
+    let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("DiskExplorer", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir
+}()
+
+private let logURL: URL = logDirectory.appendingPathComponent("debug.log")
+private let logLock = NSLock()
