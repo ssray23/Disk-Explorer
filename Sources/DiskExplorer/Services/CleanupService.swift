@@ -14,30 +14,61 @@ public class CleanupService {
             }
         }
         
-        if let error = result.1, result.0[url] == nil {
-            let nsError = error as NSError
-            if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteNoPermissionError {
-                if !SystemInfoService.hasFullDiskAccess {
-                    throw NSError(domain: "CleanupServiceError", code: 513, userInfo: [NSLocalizedDescriptionKey: "Permission denied. Please enable Full Disk Access for Disk Explorer in System Settings > Privacy & Security to delete this item."])
-                } else {
-                    // We have FDA, but still lack permission. Likely a root-owned file.
-                    // Fallback to rm -rf with admin privileges.
-                    let safePath = url.path.replacingOccurrences(of: "'", with: "'\\''")
-                    let scriptSource = """
-                    do shell script "rm -rf '\(safePath)'" with administrator privileges
-                    """
-                    if let script = NSAppleScript(source: scriptSource) {
-                        var errorInfo: NSDictionary?
-                        script.executeAndReturnError(&errorInfo)
-                        if let errorInfo = errorInfo {
-                            let errorMessage = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown AppleScript error"
-                            throw NSError(domain: "CleanupServiceError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to delete item with admin privileges: \(errorMessage)"])
+        if result.0[url] == nil {
+            let workspaceError = result.1
+            
+            // If the workspace error explicitly says the file doesn't exist, it's already gone.
+            if let nsWorkspaceError = workspaceError as NSError?, 
+               nsWorkspaceError.domain == NSCocoaErrorDomain && nsWorkspaceError.code == NSFileNoSuchFileError {
+                return url
+            }
+            
+            // Fallback 1: Try FileManager.default.trashItem (Often works better for iCloud Drive files)
+            do {
+                var resultingURL: NSURL?
+                try FileManager.default.trashItem(at: url, resultingItemURL: &resultingURL)
+                return resultingURL as URL?
+            } catch let fmError {
+                let nsWorkspaceError = workspaceError as NSError?
+                let nsFmError = fmError as NSError
+                
+                // If FileManager says it doesn't exist, it's already gone.
+                if nsFmError.domain == NSCocoaErrorDomain && nsFmError.code == NSFileNoSuchFileError {
+                    return url
+                }
+                
+                // If FileManager also fails, check if the error is a permission error to fallback to admin script
+                let isPermissionError = (nsWorkspaceError?.domain == NSCocoaErrorDomain && nsWorkspaceError?.code == NSFileWriteNoPermissionError) || 
+                                        (nsFmError.domain == NSCocoaErrorDomain && nsFmError.code == NSFileWriteNoPermissionError)
+                
+                if isPermissionError {
+                    if !SystemInfoService.hasFullDiskAccess {
+                        throw NSError(domain: "CleanupServiceError", code: 513, userInfo: [NSLocalizedDescriptionKey: "Permission denied. Please enable Full Disk Access for Disk Explorer in System Settings > Privacy & Security to delete this item."])
+                    } else {
+                        // We have FDA, but still lack permission. Likely a root-owned file.
+                        // Fallback to rm -rf with admin privileges.
+                        let safePath = url.path.replacingOccurrences(of: "'", with: "'\\''")
+                        let scriptSource = """
+                        do shell script "rm -rf '\(safePath)'" with administrator privileges
+                        """
+                        if let script = NSAppleScript(source: scriptSource) {
+                            var errorInfo: NSDictionary?
+                            script.executeAndReturnError(&errorInfo)
+                            if let errorInfo = errorInfo {
+                                let errorMessage = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown AppleScript error"
+                                throw NSError(domain: "CleanupServiceError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to delete item with admin privileges: \(errorMessage)"])
+                            }
+                            return url // Return the original URL to indicate success
                         }
-                        return url // Return the original URL to indicate success
                     }
                 }
+                
+                if let workspaceError = workspaceError {
+                    throw workspaceError // Throw the original NSWorkspace error if not a permission error
+                } else {
+                    throw fmError // Throw the FileManager error if NSWorkspace failed silently
+                }
             }
-            throw error
         }
         return result.0[url]
     }

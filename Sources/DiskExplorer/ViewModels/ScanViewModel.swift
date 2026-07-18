@@ -104,6 +104,9 @@ public class ScanViewModel: ObservableObject {
         do {
             let _ = try await CleanupService.moveToTrash(url: node.path)
             removeFromTreeAndAdvanceSelection(node)
+            self.actionMessageTitle = "Trash Successful"
+            self.actionMessageBody = "Successfully moved \(node.name) to the Trash."
+            self.showActionMessage = true
             print("Successfully trashed \(node.name)")
         } catch {
             self.actionMessageTitle = "Action Failed"
@@ -214,6 +217,7 @@ public class ScanViewModel: ObservableObject {
             children.remove(at: index)
             node.children = children
             node.size -= removedSize
+            node.version += 1
             return (true, removedSize)
         }
         
@@ -221,6 +225,7 @@ public class ScanViewModel: ObservableObject {
             let result = removeNode(withID: id, from: child)
             if result.removed {
                 node.size -= result.sizeDelta
+                node.version += 1
                 return result
             }
         }
