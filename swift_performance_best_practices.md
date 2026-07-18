@@ -72,3 +72,36 @@ ScrollView {
     }
 }
 ```
+
+## 5. Never Block the MainActor (The "Spinning Beach Ball" Rule)
+In Swift concurrency, properties and functions marked with `@MainActor` or executing within SwiftUI views run entirely on the UI thread. Calling synchronous blocking APIs—like `Process()` shell commands, AppleScript executions (`NSAppleScript`), or intensive `FileManager` deletions—will completely freeze your UI loop until they return, causing macOS to display the dreaded spinning beach ball.
+
+Even if your function is marked `async`, calling a blocking API inside it will still stall the thread it runs on.
+
+**Best Practice:**
+Always offload synchronous, computationally heavy, or blocking I/O work to a background thread using `Task.detached { ... }`. When crossing isolation boundaries (like passing arrays of models into the detached task), ensure your data models conform to the `Sendable` protocol so the Swift 6 compiler can statically guarantee your code is free of data races.
+
+```swift
+// ❌ BAD: Blocks the UI thread! Beachball guaranteed.
+@MainActor
+func cleanFiles() async {
+    isCleaning = true // UI updates
+    let script = NSAppleScript(source: "do shell script...")
+    script?.executeAndReturnError(nil) // STOPS the entire app!
+    isCleaning = false
+}
+
+// ✅ GOOD: Flawless responsive UI
+@MainActor
+func cleanFiles() async {
+    isCleaning = true
+    
+    // Pass Sendable data into a background thread
+    await Task.detached {
+        let script = NSAppleScript(source: "do shell script...")
+        script?.executeAndReturnError(nil) // Runs safely in the background
+    }.value
+    
+    isCleaning = false
+}
+```
