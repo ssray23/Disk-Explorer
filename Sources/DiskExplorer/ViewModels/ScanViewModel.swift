@@ -10,12 +10,14 @@ public class ScanViewModel {
     public var rootNode: FileNode?
     public var selectedNode: FileNode?
     public var isScanning: Bool = false
+    public var isProcessing: Bool = false
+    public var processingMessage: String = ""
     public var scanError: String?
     public var actionMessageTitle: String?
     public var actionMessageBody: String?
     public var showActionMessage: Bool = false
     public var currentPath: [FileNode] = [] // For breadcrumbs/drill-down
-    public var showFilesOnly: Bool = false
+    public var showFilesOnly: Bool = true
     
     // Derived properties
     public var currentFolderNode: FileNode? {
@@ -32,24 +34,11 @@ public class ScanViewModel {
         self.systemInfo = SystemInfoService.getSystemInfo()
     }
     
-    public func selectFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Scan Folder"
-        panel.message = "Select a folder or drive to scan for disk usage."
-        
-        if panel.runModal() == .OK, let url = panel.url {
-            startScan(url: url)
-        }
-    }
-    
     public func scanHomeDirectory() {
         startScan(url: URL(fileURLWithPath: NSHomeDirectory()))
     }
     
-    private func startScan(url: URL) {
+    public func startScan(url: URL) {
         isScanning = true
         rootNode = nil
         selectedNode = nil
@@ -71,6 +60,40 @@ public class ScanViewModel {
     public func cancelScan() {
         scanner.cancel()
         isScanning = false
+    }
+    
+    public func showOpenPanel() {
+        // We use an external osascript process to show the folder picker.
+        // This is the ONLY way to bypass the unfixable 10-second macOS Gatekeeper
+        // LaunchServices freeze that plagues ad-hoc signed apps.
+        // By hosting the dialog in /usr/bin/osascript, our app's signature is not checked!
+        DispatchQueue.global(qos: .userInitiated).async {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            let script = """
+            set targetFolder to choose folder with prompt "Select a folder or drive to scan:"
+            POSIX path of targetFolder
+            """
+            process.arguments = ["-e", script]
+            
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            
+            do {
+                try process.run()
+                process.waitUntilExit()
+                
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !output.isEmpty {
+                    let url = URL(fileURLWithPath: output)
+                    Task { @MainActor in
+                        self.startScan(url: url)
+                    }
+                }
+            } catch {
+                print("Failed to launch osascript folder picker.")
+            }
+        }
     }
     
     public func drillDown(to node: FileNode) {
@@ -102,14 +125,19 @@ public class ScanViewModel {
     public func trashSelectedNode() async {
         guard let node = selectedNode else { return }
         
+        isProcessing = true
+        processingMessage = "Moving \(node.name) to the Trash..."
+        
         do {
             let _ = try await CleanupService.moveToTrash(url: node.path)
             removeFromTreeAndAdvanceSelection(node)
+            isProcessing = false
             self.actionMessageTitle = "Trash Successful"
             self.actionMessageBody = "Successfully moved \(node.name) to the Trash."
             self.showActionMessage = true
             print("Successfully trashed \(node.name)")
         } catch {
+            isProcessing = false
             self.actionMessageTitle = "Action Failed"
             self.actionMessageBody = "Failed to trash \(node.name): \(error.localizedDescription)"
             self.showActionMessage = true
@@ -123,7 +151,12 @@ public class ScanViewModel {
     public func deepCleanSelectedNode() async {
         guard let node = selectedNode, node.category == .applications else { return }
         
+        isProcessing = true
+        processingMessage = "Deep cleaning \(node.name)..."
+        
         let result = await CleanupService.deepClean(appURL: node.path)
+        
+        isProcessing = false
         
         for (url, error) in result.errors {
             print("Failed to trash \(url.lastPathComponent) during deep clean: \(error)")
@@ -183,12 +216,12 @@ public class ScanViewModel {
                 self.currentPath = []
             } else {
                 var modifiedRoot = root
-                let _ = removeNode(withID: node.id, from: &modifiedRoot)
+                let _ = removeNode(withID: node.id, targetURL: node.path, from: &modifiedRoot)
                 self.rootNode = modifiedRoot
                 
                 var newPath: [FileNode] = []
                 for oldNode in self.currentPath {
-                    if let matching = findNode(withID: oldNode.id, in: modifiedRoot) {
+                    if let matching = findNode(withID: oldNode.id, targetURL: oldNode.path, in: modifiedRoot) {
                         newPath.append(matching)
                     } else {
                         break
@@ -209,7 +242,11 @@ public class ScanViewModel {
     
     // MARK: - Tree Mutating Utilities
     
-    private func removeNode(withID id: UUID, from node: inout FileNode) -> (removed: Bool, sizeDelta: Int64) {
+    private func removeNode(withID id: UUID, targetURL: URL, from node: inout FileNode) -> (removed: Bool, sizeDelta: Int64) {
+        let targetPath = targetURL.path
+        let nodePath = node.path.path
+        guard targetPath == nodePath || targetPath.hasPrefix(nodePath + "/") else { return (false, 0) }
+        
         guard var children = node.children else { return (false, 0) }
         
         if let index = children.firstIndex(where: { $0.id == id }) {
@@ -221,7 +258,7 @@ public class ScanViewModel {
         }
         
         for i in 0..<children.count {
-            let result = removeNode(withID: id, from: &children[i])
+            let result = removeNode(withID: id, targetURL: targetURL, from: &children[i])
             if result.removed {
                 node.children = children
                 node.size -= result.sizeDelta
@@ -232,11 +269,15 @@ public class ScanViewModel {
         return (false, 0)
     }
 
-    private func findNode(withID id: UUID, in node: FileNode) -> FileNode? {
+    private func findNode(withID id: UUID, targetURL: URL, in node: FileNode) -> FileNode? {
+        let targetPath = targetURL.path
+        let nodePath = node.path.path
+        guard targetPath == nodePath || targetPath.hasPrefix(nodePath + "/") else { return nil }
+        
         if node.id == id { return node }
         if let children = node.children {
             for child in children {
-                if let found = findNode(withID: id, in: child) {
+                if let found = findNode(withID: id, targetURL: targetURL, in: child) {
                     return found
                 }
             }

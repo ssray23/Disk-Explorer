@@ -68,7 +68,7 @@ public struct CategoryHistogramView: View {
         }
         .padding(16)
         .background(Color(NSColor.controlBackgroundColor))
-        .task(id: "\(rootNode.id)") {
+        .task(id: "\(rootNode.id)-\(rootNode.size)") {
             await calculateSizes()
         }
     }

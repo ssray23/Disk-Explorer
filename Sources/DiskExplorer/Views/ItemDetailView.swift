@@ -1,6 +1,9 @@
 import SwiftUI
 import AppKit
+import QuickLookThumbnailing
 import UniformTypeIdentifiers
+import PDFKit
+
 public struct ItemDetailView: View {
     @State private var previewImage: NSImage?
     
@@ -27,7 +30,7 @@ public struct ItemDetailView: View {
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                                 .frame(width: 40, height: 40)
-                                .foregroundColor(node.category.color)
+                                .foregroundColor(node.isDirectory ? .blue : node.category.color)
                                 
                             if node.isAlias {
                                 Image(systemName: "arrowshape.turn.up.right.fill")
@@ -70,8 +73,8 @@ public struct ItemDetailView: View {
                             .fontWeight(.bold)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(node.category.color.opacity(0.2))
-                            .foregroundColor(node.category.color)
+                            .background((node.isDirectory ? Color.blue : node.category.color).opacity(0.2))
+                            .foregroundColor(node.isDirectory ? .blue : node.category.color)
                             .cornerRadius(4)
                     }
                     
@@ -189,13 +192,77 @@ public struct ItemDetailView: View {
         }
         .background(.regularMaterial)
         .task(id: node.id) {
-            previewImage = nil
-            if let type = UTType(filenameExtension: node.path.pathExtension), type.conforms(to: .image) {
-                let url = node.path
-                if let image = await Task.detached(operation: { NSImage(contentsOf: url) }).value {
+            await MainActor.run {
+                previewImage = nil
+            }
+            
+            let url = node.path
+            let type = UTType(filenameExtension: url.pathExtension.lowercased())
+            
+            // Prevent blocking downloads for iCloud dataless files
+            var isDataless = false
+            if let resourceValues = try? url.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey]) {
+                let isUbiquitous = resourceValues.isUbiquitousItem ?? false
+                let isDownloaded = resourceValues.ubiquitousItemDownloadingStatus == .current
+                if isUbiquitous && !isDownloaded {
+                    isDataless = true
+                }
+            }
+            
+            if isDataless {
+                await MainActor.run {
+                    let icon = NSWorkspace.shared.icon(forFile: url.path)
+                    icon.size = CGSize(width: 256, height: 256)
+                    self.previewImage = icon
+                }
+                return
+            }
+            
+            if type?.conforms(to: .pdf) == true {
+                // PDFKit is much faster and more reliable than QuickLook for local PDFs
+                if let image = await Task.detached(operation: { () -> NSImage? in
+                    guard let pdfDoc = PDFDocument(url: url), let page = pdfDoc.page(at: 0) else { return nil }
+                    let rect = page.bounds(for: .mediaBox)
+                    return NSImage(size: rect.size, flipped: false) { drawRect in
+                        guard let context = NSGraphicsContext.current?.cgContext else { return false }
+                        context.setFillColor(NSColor.white.cgColor)
+                        context.fill(drawRect)
+                        page.draw(with: .mediaBox, to: context)
+                        return true
+                    }
+                }).value {
                     await MainActor.run {
                         self.previewImage = image
                     }
+                    return
+                }
+            }
+            
+            let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
+            let size = CGSize(width: 400, height: 400)
+            let request = QLThumbnailGenerator.Request(fileAt: url, size: size, scale: scale, representationTypes: .thumbnail)
+            
+            do {
+                let thumbnail = try await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
+                await MainActor.run {
+                    self.previewImage = thumbnail.nsImage
+                }
+            } catch {
+                // Fallback to basic NSImage loading or icon
+                if type?.conforms(to: .image) == true {
+                    if let image = await Task.detached(operation: { NSImage(contentsOf: url) }).value {
+                        await MainActor.run {
+                            self.previewImage = image
+                        }
+                        return
+                    }
+                }
+                
+                // Ultimate fallback
+                await MainActor.run {
+                    let icon = NSWorkspace.shared.icon(forFile: url.path)
+                    icon.size = CGSize(width: 256, height: 256)
+                    self.previewImage = icon
                 }
             }
         }

@@ -33,7 +33,7 @@ public struct MainView: View {
                 VStack(spacing: 12) {
                     Button(action: {
                         viewMode = .explorer
-                        viewModel.selectFolder()
+                        viewModel.showOpenPanel()
                     }) {
                         HStack {
                             Image(systemName: "folder.badge.magnifyingglass")
@@ -269,25 +269,7 @@ public struct MainView: View {
                 .ignoresSafeArea(.all, edges: .top)
             }
         }
-        .toolbar {
-            if viewMode == .explorer && viewModel.selectedNode != nil {
-                ToolbarItem(placement: .primaryAction) {
-                    Button(action: {
-                        Task { await viewModel.trashSelectedNode() }
-                    }) {
-                        Label("Trash", systemImage: "trash")
-                    }
-                }
-                
-                ToolbarItem(placement: .primaryAction) {
-                    Button(action: {
-                        Task { await viewModel.deepCleanSelectedNode() }
-                    }) {
-                        Label("Deep Clean", systemImage: "sparkles")
-                    }
-                }
-            }
-        }
+
         .alert(isPresented: $viewModel.showActionMessage) {
             Alert(
                 title: Text(viewModel.actionMessageTitle ?? "Message"),

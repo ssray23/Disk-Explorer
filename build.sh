@@ -39,6 +39,16 @@ cat << 'EOF' > "Disk Explorer.app/Contents/Info.plist"
     <string>13.0</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>Disk Explorer needs permission to control the Finder in order to move protected applications and their caches to the Trash.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>Disk Explorer needs access to scan your Desktop.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>Disk Explorer needs access to scan your Documents.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>Disk Explorer needs access to scan your Downloads.</string>
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>Disk Explorer needs access to scan removable volumes.</string>
+    <key>NSNetworkVolumesUsageDescription</key>
+    <string>Disk Explorer needs access to scan network volumes.</string>
 </dict>
 </plist>
 EOF

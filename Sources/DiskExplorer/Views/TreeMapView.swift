@@ -45,8 +45,8 @@ public struct TreeMapView: View {
                                     .fill(
                                         LinearGradient(
                                             gradient: Gradient(colors: [
-                                                tmRect.node.category.color.opacity(isSelected ? 0.9 : (isHovered ? 0.7 : 0.4)),
-                                                tmRect.node.category.color.opacity(isSelected ? 1.0 : (isHovered ? 0.8 : 0.6))
+                                                (tmRect.node.isDirectory ? Color.blue : tmRect.node.category.color).opacity(isSelected ? 0.9 : (isHovered ? 0.7 : 0.4)),
+                                                (tmRect.node.isDirectory ? Color.blue : tmRect.node.category.color).opacity(isSelected ? 1.0 : (isHovered ? 0.8 : 0.6))
                                             ]),
                                             startPoint: .topLeading,
                                             endPoint: .bottomTrailing

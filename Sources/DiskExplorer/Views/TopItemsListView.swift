@@ -107,8 +107,8 @@ public struct TopItemsListView: View {
             
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(items) { item in
-                        TopItemRowView(item: item, isSelected: item.id == selectedNode?.id, maxItemSize: maxItemSize)
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        TopItemRowView(item: item, isSelected: item.id == selectedNode?.id, isAlternate: index % 2 != 0, maxItemSize: maxItemSize)
                             .equatable()
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -133,7 +133,7 @@ public struct TopItemsListView: View {
                 .padding(.vertical, 4)
             }
         }
-        .task(id: "\(rootNode.id)-\(showFilesOnly)") {
+        .task(id: "\(rootNode.id)-\(rootNode.size)-\(showFilesOnly)") {
             await updateCachedItems(showFiles: showFilesOnly)
         }
     }
@@ -142,10 +142,11 @@ public struct TopItemsListView: View {
 struct TopItemRowView: View, Equatable {
     let item: FileNode
     let isSelected: Bool
+    let isAlternate: Bool
     let maxItemSize: Int64
     
     nonisolated static func == (lhs: TopItemRowView, rhs: TopItemRowView) -> Bool {
-        return lhs.item.id == rhs.item.id && lhs.isSelected == rhs.isSelected && lhs.maxItemSize == rhs.maxItemSize
+        return lhs.item.id == rhs.item.id && lhs.isSelected == rhs.isSelected && lhs.isAlternate == rhs.isAlternate && lhs.maxItemSize == rhs.maxItemSize
     }
     
     var body: some View {
@@ -153,10 +154,10 @@ struct TopItemRowView: View, Equatable {
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(item.category.color.opacity(0.2))
+                        .fill((item.isDirectory ? Color.blue : item.category.color).opacity(0.2))
                         .frame(width: 32, height: 32)
                     Image(systemName: item.isDirectory ? "folder.fill" : "doc.text.fill")
-                        .foregroundColor(item.category.color)
+                        .foregroundColor(item.isDirectory ? .blue : item.category.color)
                         .font(.system(size: 14))
                         
                     if item.isAlias {
@@ -175,19 +176,20 @@ struct TopItemRowView: View, Equatable {
                         .fontWeight(.medium)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .foregroundColor(isSelected ? .white : .primary)
                     let logicalPath = item.path.path
                     let physicalPath = item.path.path
                     
                     Text(logicalPath)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         
                     if logicalPath != physicalPath {
                         Text("(\(physicalPath))")
                             .font(.caption2)
-                            .foregroundColor(.secondary.opacity(0.7))
+                            .foregroundColor(isSelected ? .white.opacity(0.6) : .secondary.opacity(0.7))
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -199,17 +201,16 @@ struct TopItemRowView: View, Equatable {
                     .font(.callout)
                     .fontWeight(.semibold)
                     .monospacedDigit()
-                    .foregroundColor(.primary.opacity(0.8))
+                    .foregroundColor(isSelected ? .white : .primary.opacity(0.8))
             }
             
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.secondary.opacity(0.1))
                     
                     let ratio = Double(item.size) / Double(max(maxItemSize, 1))
+                    let nodeColor = item.isDirectory ? Color.blue : item.category.color
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(LinearGradient(colors: [item.category.color.opacity(0.6), item.category.color], startPoint: .leading, endPoint: .trailing))
+                        .fill(LinearGradient(colors: [nodeColor.opacity(0.6), nodeColor], startPoint: .leading, endPoint: .trailing))
                         .frame(width: geo.size.width * CGFloat(ratio))
                 }
             }
@@ -218,7 +219,7 @@ struct TopItemRowView: View, Equatable {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
-        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+        .background(isSelected ? Color(NSColor.darkGray) : (isAlternate ? Color.gray.opacity(0.1) : Color.clear))
         .cornerRadius(8)
     }
 }
