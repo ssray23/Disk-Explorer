@@ -1,23 +1,15 @@
 import Foundation
+import Synchronization
 
-public class DiskScanner: @unchecked Sendable {
+public final class DiskScanner: Sendable {
     
     public init() {}
     
-    private let cancelLock = NSLock()
-    private var _isCancelled = false
+    private let cancelState = Mutex(false)
     
     private var isCancelled: Bool {
-        get {
-            cancelLock.lock()
-            defer { cancelLock.unlock() }
-            return _isCancelled
-        }
-        set {
-            cancelLock.lock()
-            defer { cancelLock.unlock() }
-            _isCancelled = newValue
-        }
+        get { cancelState.withLock { $0 } }
+        set { cancelState.withLock { $0 = newValue } }
     }
     
     public func cancel() {
@@ -81,7 +73,7 @@ public class DiskScanner: @unchecked Sendable {
                 isAlias: isAlias,
                 children: nil,
                 category: classification.category,
-                customURL: url
+                path: url
             )
         }
         
@@ -125,12 +117,8 @@ public class DiskScanner: @unchecked Sendable {
             isAlias: isAlias,
             children: children.isEmpty ? nil : children,
             category: classification.category,
-            customURL: url
+            path: url
         )
-        
-        for child in children {
-            child.parent = root
-        }
         
         return root
     }
@@ -155,7 +143,8 @@ public class DiskScanner: @unchecked Sendable {
                 isDirectory: false,
                 isAlias: childIsAlias,
                 children: nil,
-                category: classification.category
+                category: classification.category,
+                path: fileURL
             )
         } else {
             return scanDirectory(url: fileURL, isRoot: false)
@@ -186,7 +175,7 @@ public class DiskScanner: @unchecked Sendable {
                 isAlias: isAlias,
                 children: nil,
                 category: classification.category,
-                customURL: isRoot ? url : nil
+                path: url
             )
         }
         
@@ -221,12 +210,8 @@ public class DiskScanner: @unchecked Sendable {
             isAlias: isAlias,
             children: children.isEmpty ? nil : children,
             category: classification.category,
-            customURL: isRoot ? url : nil
+            path: url
         )
-        
-        for child in children {
-            child.parent = root
-        }
         
         return root
     }

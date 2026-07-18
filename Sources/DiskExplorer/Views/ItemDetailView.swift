@@ -105,7 +105,7 @@ public struct ItemDetailView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                         let logicalPath = node.path.path
-                        let physicalPath = node.physicalPath
+                        let physicalPath = node.path.path
                         
                         Text(logicalPath != physicalPath ? "\(logicalPath) (\(physicalPath))" : logicalPath)
                             .font(.caption2)

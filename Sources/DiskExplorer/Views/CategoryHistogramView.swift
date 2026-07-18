@@ -5,7 +5,7 @@ public struct CategoryHistogramView: View {
     
     @State private var categorySizes: [(category: FileCategory, size: Int64)] = []
     @State private var isCalculating = true
-    @State private var currentRootID: ObjectIdentifier?
+    @State private var currentRootID: UUID?
     
     public init(rootNode: FileNode) {
         self.rootNode = rootNode
@@ -68,7 +68,7 @@ public struct CategoryHistogramView: View {
         }
         .padding(16)
         .background(Color(NSColor.controlBackgroundColor))
-        .task(id: "\(rootNode.id)-\(rootNode.version)") {
+        .task(id: "\(rootNode.id)") {
             await calculateSizes()
         }
     }

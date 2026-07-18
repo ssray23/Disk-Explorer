@@ -7,7 +7,7 @@ public struct MainView: View {
     }
     
     @State private var viewMode: ViewMode = .explorer
-    @StateObject private var viewModel = ScanViewModel()
+    @State private var viewModel = ScanViewModel()
     
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 300
     @AppStorage("treemapHeight") private var treemapHeight: Double = 300
@@ -221,7 +221,7 @@ public struct MainView: View {
                 }
                 .navigationSplitViewColumnWidth(min: 500, ideal: 800)
                 .ignoresSafeArea(.all, edges: .top)
-                .onChange(of: scenePhase) { newPhase in
+                .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .active {
                         hasFullDiskAccess = SystemInfoService.hasFullDiskAccess
                     }
@@ -267,6 +267,25 @@ public struct MainView: View {
                 }
                 .navigationSplitViewColumnWidth(min: 250, ideal: CGFloat(inspectorWidth), max: 400)
                 .ignoresSafeArea(.all, edges: .top)
+            }
+        }
+        .toolbar {
+            if viewMode == .explorer && viewModel.selectedNode != nil {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: {
+                        Task { await viewModel.trashSelectedNode() }
+                    }) {
+                        Label("Trash", systemImage: "trash")
+                    }
+                }
+                
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: {
+                        Task { await viewModel.deepCleanSelectedNode() }
+                    }) {
+                        Label("Deep Clean", systemImage: "sparkles")
+                    }
+                }
             }
         }
         .alert(isPresented: $viewModel.showActionMessage) {

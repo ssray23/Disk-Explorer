@@ -4,17 +4,18 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 @MainActor
-public class ScanViewModel: ObservableObject {
-    @Published public var systemInfo: SystemInfo?
-    @Published public var rootNode: FileNode?
-    @Published public var selectedNode: FileNode?
-    @Published public var isScanning: Bool = false
-    @Published public var scanError: String?
-    @Published public var actionMessageTitle: String?
-    @Published public var actionMessageBody: String?
-    @Published public var showActionMessage: Bool = false
-    @Published public var currentPath: [FileNode] = [] // For breadcrumbs/drill-down
-    @Published public var showFilesOnly: Bool = false
+@Observable
+public class ScanViewModel {
+    public var systemInfo: SystemInfo?
+    public var rootNode: FileNode?
+    public var selectedNode: FileNode?
+    public var isScanning: Bool = false
+    public var scanError: String?
+    public var actionMessageTitle: String?
+    public var actionMessageBody: String?
+    public var showActionMessage: Bool = false
+    public var currentPath: [FileNode] = [] // For breadcrumbs/drill-down
+    public var showFilesOnly: Bool = false
     
     // Derived properties
     public var currentFolderNode: FileNode? {
@@ -96,7 +97,7 @@ public class ScanViewModel: ObservableObject {
         selectedNode = nil
     }
     
-    @Published public var currentListItems: [FileNode] = []
+    public var currentListItems: [FileNode] = []
     
     public func trashSelectedNode() async {
         guard let node = selectedNode else { return }
@@ -181,14 +182,13 @@ public class ScanViewModel: ObservableObject {
                 self.rootNode = nil
                 self.currentPath = []
             } else {
-                let _ = removeNode(withID: node.id, from: root)
-                root.version += 1
-                self.rootNode = root
-                self.objectWillChange.send()
+                var modifiedRoot = root
+                let _ = removeNode(withID: node.id, from: &modifiedRoot)
+                self.rootNode = modifiedRoot
                 
                 var newPath: [FileNode] = []
                 for oldNode in self.currentPath {
-                    if let matching = findNode(withID: oldNode.id, in: root) {
+                    if let matching = findNode(withID: oldNode.id, in: modifiedRoot) {
                         newPath.append(matching)
                     } else {
                         break
@@ -209,23 +209,22 @@ public class ScanViewModel: ObservableObject {
     
     // MARK: - Tree Mutating Utilities
     
-    private func removeNode(withID id: ObjectIdentifier, from node: FileNode) -> (removed: Bool, sizeDelta: Int64) {
+    private func removeNode(withID id: UUID, from node: inout FileNode) -> (removed: Bool, sizeDelta: Int64) {
         guard var children = node.children else { return (false, 0) }
         
         if let index = children.firstIndex(where: { $0.id == id }) {
             let removedSize = children[index].size
             children.remove(at: index)
-            node.children = children
+            node.children = children.isEmpty ? nil : children
             node.size -= removedSize
-            node.version += 1
             return (true, removedSize)
         }
         
-        for child in children {
-            let result = removeNode(withID: id, from: child)
+        for i in 0..<children.count {
+            let result = removeNode(withID: id, from: &children[i])
             if result.removed {
+                node.children = children
                 node.size -= result.sizeDelta
-                node.version += 1
                 return result
             }
         }
@@ -233,7 +232,7 @@ public class ScanViewModel: ObservableObject {
         return (false, 0)
     }
 
-    private func findNode(withID id: ObjectIdentifier, in node: FileNode) -> FileNode? {
+    private func findNode(withID id: UUID, in node: FileNode) -> FileNode? {
         if node.id == id { return node }
         if let children = node.children {
             for child in children {

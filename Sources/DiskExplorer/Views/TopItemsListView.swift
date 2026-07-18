@@ -20,7 +20,7 @@ public struct TopItemsListView: View {
     
     @State private var cachedItems: [FileNode] = []
     @State private var lastTapTime: Date = Date.distantPast
-    @State private var lastTapItem: ObjectIdentifier? = nil
+    @State private var lastTapItem: UUID? = nil
     
     private func updateCachedItems(showFiles: Bool) async {
         let root = rootNode
@@ -133,7 +133,7 @@ public struct TopItemsListView: View {
                 .padding(.vertical, 4)
             }
         }
-        .task(id: "\(rootNode.id)-\(rootNode.version)-\(showFilesOnly)") {
+        .task(id: "\(rootNode.id)-\(showFilesOnly)") {
             await updateCachedItems(showFiles: showFilesOnly)
         }
     }
@@ -175,8 +175,8 @@ struct TopItemRowView: View, Equatable {
                         .fontWeight(.medium)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    let logicalPath = item.physicalPath
-                    let physicalPath = item.physicalPath
+                    let logicalPath = item.path.path
+                    let physicalPath = item.path.path
                     
                     Text(logicalPath)
                         .font(.caption)

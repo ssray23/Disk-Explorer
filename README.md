@@ -106,17 +106,17 @@ The presentation layer is strictly declarative. The `MainView` handles structura
 - **`ItemDetailView`**: Presents an edge-to-edge inspector pane utilizing a `NavigationSplitView` architecture. To bypass restrictive macOS `NSVisualEffectView` Vibrancy blending engine (which often washes out standard `.bordered` buttons atop `.regularMaterial`), we deploy custom `.plain` button styles with strict opaque rendering parameters. Integrates deeply with the macOS environment, invoking `NSWorkspace.shared.open` and `@Environment(\.openURL)` to bridge native web searches and Finder revelation commands dynamically.
 
 ### 2. ViewModel Layer
-The ViewModels orchestrate communication between background services and the main UI thread.
+The ViewModels orchestrate communication between background services and the main UI thread. They utilize modern Swift 6 `@Observable` macros for highly efficient, granular UI updates.
 - **`ScanViewModel`**: Tracks the recursive file tree state. Triggers scans using background `Task` logic and handles breadcrumb navigation logic. 
 - **`DeepCleanViewModel`**: Manages isolated state for specific cleanup paths, dynamically tracking physical file size via non-blocking enumerators and safely destroying data.
 
 ### 3. Service Layer
-- **`DiskScanner`**: A highly parallelized service utilizing `FileManager.enumerator`. Importantly, it bypasses standard Apple API firmlink obfuscation by manually passing and constructing physical directory paths dynamically, ensuring accuracy across volumes. Calculates sizes utilizing native `allocatedFileSizeKey` to capture true blocks-on-disk measurements.
+- **`DiskScanner`**: A highly parallelized service utilizing `FileManager.enumerator` and Swift 6 `Synchronization.Mutex` for thread-safe state management. Calculates sizes utilizing native `allocatedFileSizeKey` to capture true blocks-on-disk measurements.
 - **`CleanupService`**: Uses `NSWorkspace` to securely bypass sandbox constraints and perform unrecoverable `.Trash` relocation routines.
 - **`SystemInfoService`**: Interfaces tightly with standard macOS Darwin layers and `URLResourceValues` to track true device capacity dynamically.
 
 ### 4. Models
-- **`FileNode`**: The fundamental data unit forming a tree. It natively conforms to `Identifiable` and `Hashable`.
+- **`FileNode`**: The fundamental data unit forming a tree. Implemented as a highly-efficient value-type `struct` conforming to `Identifiable`, `Hashable`, and `Sendable`.
 
 ## Features
 
@@ -131,8 +131,8 @@ The ViewModels orchestrate communication between background services and the mai
 Disk Explorer is distributed as a Swift Package that builds into a standalone macOS `.app` bundle.
 
 ### Prerequisites
-- macOS 13.0 or later
-- Xcode or the Swift Command Line Tools installed
+- macOS 15.0 or later
+- Xcode 16+ or the Swift 6.0 Command Line Tools installed
 
 ### How to Install & Run
 

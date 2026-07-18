@@ -13,9 +13,9 @@ public struct TreeMapView: View {
     let onDrillDown: (FileNode) -> Void
     var onGoUp: (() -> Void)? = nil
     
-    @State private var hoveredNodeID: ObjectIdentifier?
+    @State private var hoveredNodeID: UUID?
     @State private var lastTapTime: Date = Date.distantPast
-    @State private var lastTapItem: ObjectIdentifier? = nil
+    @State private var lastTapItem: UUID? = nil
     
     public init(node: FileNode, selectedNode: FileNode?, flatItems: [FileNode]? = nil, onSelect: @escaping (FileNode) -> Void, onDrillDown: @escaping (FileNode) -> Void, onGoUp: (() -> Void)? = nil) {
         self.node = node
@@ -103,7 +103,7 @@ public struct TreeMapView: View {
                         }
                     }
                 }
-                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: node.version)
+                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: node)
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: flatItems?.count)
                 .animation(.easeInOut(duration: 0.2), value: selectedNode?.id)
             }
