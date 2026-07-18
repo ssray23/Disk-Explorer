@@ -36,7 +36,7 @@ cat << 'EOF' > "Disk Explorer.app/Contents/Info.plist"
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+    <string>15.0</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>Disk Explorer needs permission to control the Finder in order to move protected applications and their caches to the Trash.</string>
     <key>NSDesktopFolderUsageDescription</key>
@@ -58,7 +58,6 @@ touch "Disk Explorer.app"
 
 # Ad-hoc sign the entire bundle to satisfy macOS Gatekeeper and LaunchServices
 echo "🔐 Ad-hoc signing the app bundle..."
-xattr -cr "Disk Explorer.app"
 xattr -cr "Disk Explorer.app"
 codesign --force --deep --sign - "Disk Explorer.app"
 

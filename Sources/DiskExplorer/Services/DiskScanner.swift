@@ -41,6 +41,25 @@ public final class DiskScanner: Sendable {
     /// case: scanning a home folder, where the real concurrency opportunity is the handful of
     /// large top-level folders (Library, Documents, Movies, Applications...), not the thousands
     /// of individual subdirectories underneath them.
+    /// Serially touches each TCC-gated top-level folder (Desktop, Documents, Downloads)
+    /// with a single lightweight `contentsOfDirectory` call, awaited one at a time, so
+    /// macOS shows at most one consent dialog at a time before the parallel scan fan-out
+    /// begins. TCC caches the decision per app + folder, so subsequent parallel accesses
+    /// to those folders are allowed immediately without further prompts.
+    ///
+    /// Must only be called when `url` is the user's home directory (or similar root that
+    /// contains these protected folders as immediate children).
+    private func primeProtectedFolderAccess(homeURL: URL) async {
+        let protectedNames = ["Desktop", "Documents", "Downloads"]
+        for name in protectedNames {
+            let folderURL = homeURL.appendingPathComponent(name)
+            // A single serial stat call per folder. If macOS needs to prompt for this
+            // folder's TCC permission it will do so here, one dialog at a time, before
+            // any background task fan-out starts.
+            _ = try? FileManager.default.contentsOfDirectory(atPath: folderURL.path)
+        }
+    }
+
     private func scanRoot(url: URL) async -> FileNode? {
         if isCancelled { return nil }
         
@@ -52,6 +71,11 @@ public final class DiskScanner: Sendable {
         guard isDirectory.boolValue else {
             return scanDirectory(url: url, isRoot: true)
         }
+        
+        // Prime TCC-gated protected folders serially *before* the parallel fan-out.
+        // This prevents concurrent consent dialogs from hanging the process on macOS 15
+        // when running under an ad-hoc code signature (see comment in showOpenPanel).
+        await primeProtectedFolderAccess(homeURL: url)
         
         let resourceValues = try? url.resourceValues(forKeys: [.isAliasFileKey, .isSymbolicLinkKey])
         let isAlias = (resourceValues?.isAliasFile == true) || (resourceValues?.isSymbolicLink == true)

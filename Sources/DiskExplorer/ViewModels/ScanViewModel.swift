@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import SwiftUI
 import UniformTypeIdentifiers
+import AppKit
 
 @MainActor
 @Observable
@@ -27,6 +28,10 @@ public class ScanViewModel {
     private let scanner = DiskScanner()
     
     public init() {
+        // Disable stdout/stderr buffering so logs flush instantly to app_output.log
+        setvbuf(stdout, nil, _IONBF, 0)
+        setvbuf(stderr, nil, _IONBF, 0)
+        Self.writeLog("[Disk Explorer] App initialized, unbuffered logging enabled.")
         loadSystemInfo()
     }
     
@@ -63,39 +68,36 @@ public class ScanViewModel {
     }
     
     public func showOpenPanel() {
-        // We use an external osascript process to show the folder picker.
-        // This is the ONLY way to bypass the unfixable 10-second macOS Gatekeeper
-        // LaunchServices freeze that plagues ad-hoc signed apps.
-        // By hosting the dialog in /usr/bin/osascript, our app's signature is not checked!
-        DispatchQueue.global(qos: .userInitiated).async {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            let script = """
-            set targetFolder to choose folder with prompt "Select a folder or drive to scan:"
-            POSIX path of targetFolder
-            """
-            process.arguments = ["-e", script]
-            
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            
-            do {
-                try process.run()
-                process.waitUntilExit()
-                
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !output.isEmpty {
-                    let url = URL(fileURLWithPath: output)
-                    Task { @MainActor in
-                        self.startScan(url: url)
-                    }
-                }
-            } catch {
-                print("Failed to launch osascript folder picker.")
-            }
+        // NSOpenPanel using runModal() is the native macOS folder picker.
+        //
+        // Why runModal() instead of begin():
+        //   runModal() starts a nested event loop that pumps UI events while the panel is
+        //   being loaded and displayed. This prevents macOS from thinking the main thread
+        //   is unresponsive, eliminating the spinning beach ball. It also natively displays
+        //   all Finder sidebar items including iCloud and OneDrive.
+        
+        Self.writeLog("[Disk Explorer] showOpenPanel() called using native NSOpenPanel runModal().")
+        
+        let panel = NSOpenPanel()
+        panel.title = "Select a folder or drive to scan"
+        panel.message = "Select a folder or drive to scan for disk usage."
+        panel.prompt = "Scan"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canDownloadUbiquitousContents = true
+        panel.canResolveUbiquitousConflicts = true
+        
+        if panel.runModal() == .OK, let url = panel.url {
+            Self.writeLog("[Disk Explorer] Folder selected: \(url.path)")
+            startScan(url: url)
+        } else {
+            Self.writeLog("[Disk Explorer] User cancelled the native folder picker.")
         }
     }
-    
+
+
+
     public func drillDown(to node: FileNode) {
         if node.isDirectory {
             currentPath.append(node)
@@ -283,5 +285,19 @@ public class ScanViewModel {
             }
         }
         return nil
+    }
+
+    nonisolated public static func writeLog(_ message: String) {
+        let logURL = URL(fileURLWithPath: "/Users/suddharay/Library/Mobile Documents/com~apple~CloudDocs/Mac Projects/Disk Explorer (Swift)/debug.log")
+        let line = "[\(Date())] \(message)\n"
+        if let data = line.data(using: .utf8) {
+            if let fileHandle = try? FileHandle(forWritingTo: logURL) {
+                fileHandle.seekToEndOfFile()
+                fileHandle.write(data)
+                fileHandle.closeFile()
+            } else {
+                try? data.write(to: logURL)
+            }
+        }
     }
 }

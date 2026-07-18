@@ -14,6 +14,7 @@ public struct MainView: View {
     @State private var dragInitialHeight: Double? = nil
     
     @State private var hasFullDiskAccess: Bool = SystemInfoService.hasFullDiskAccess
+    @State private var isDropping: Bool = false
     @Environment(\.scenePhase) private var scenePhase
     public init() {}
     
@@ -32,8 +33,12 @@ public struct MainView: View {
                 
                 VStack(spacing: 12) {
                     Button(action: {
+                        ScanViewModel.writeLog("[MainView] Scan Folder... button clicked. Presenting CustomFolderPickerWindow.")
                         viewMode = .explorer
-                        viewModel.showOpenPanel()
+                        CustomFolderPickerWindow.show { selectedURL in
+                            ScanViewModel.writeLog("[MainView] Folder selected from CustomFolderPickerWindow: \(selectedURL.path)")
+                            viewModel.startScan(url: selectedURL)
+                        }
                     }) {
                         HStack {
                             Image(systemName: "folder.badge.magnifyingglass")
@@ -45,6 +50,7 @@ public struct MainView: View {
                     .buttonStyle(.borderedProminent)
                     
                     Button(action: {
+                        ScanViewModel.writeLog("[MainView] Scan Home Folder button clicked.")
                         viewMode = .explorer
                         viewModel.scanHomeDirectory()
                     }) {
@@ -209,15 +215,30 @@ public struct MainView: View {
                             .padding(.bottom, 20)
                     }
                     
-                    Image(systemName: "internaldrive")
+                    Image(systemName: isDropping ? "arrow.down.doc.fill" : "internaldrive")
                         .font(.system(size: 60))
-                        .foregroundColor(.blue)
+                        .foregroundColor(isDropping ? .accentColor : .blue)
+                        .scaleEffect(isDropping ? 1.2 : 1.0)
+                        .animation(.spring(), value: isDropping)
                     
-                    Text("Ready to Scan")
+                    Text(isDropping ? "Drop to Scan Folder" : "Ready to Scan")
                         .font(.title)
+                        .fontWeight(isDropping ? .semibold : .regular)
                     
-                    Text("Select a folder or drive from the sidebar to analyze disk space usage.")
+                    Text("Drag and drop any folder or drive here, or select one from the sidebar to analyze disk space usage.")
                         .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(isDropping ? Color.accentColor : Color.clear, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round, miterLimit: 0, dash: [10, 5], dashPhase: 0))
+                        .background(isDropping ? Color.accentColor.opacity(0.05) : Color.clear)
+                        .padding(24)
+                )
+                .onDrop(of: [.directory, .fileURL], isTargeted: $isDropping) { providers in
+                    handleDrop(providers: providers)
                 }
                 .navigationSplitViewColumnWidth(min: 500, ideal: 800)
                 .ignoresSafeArea(.all, edges: .top)
@@ -277,6 +298,23 @@ public struct MainView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
+    }
+    
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first else { return false }
+        
+        _ = provider.loadObject(ofClass: URL.self) { url, error in
+            if let url = url {
+                ScanViewModel.writeLog("[MainView] Folder dropped: \(url.path)")
+                Task { @MainActor in
+                    viewMode = .explorer
+                    viewModel.startScan(url: url)
+                }
+            } else {
+                ScanViewModel.writeLog("[MainView] Failed to load object of class URL from drop provider: \(error?.localizedDescription ?? "no error description")")
+            }
+        }
+        return true
     }
 }
 
