@@ -125,25 +125,32 @@ public class ScanViewModel {
     public var currentListItems: [FileNode] = []
     
     public func trashSelectedNode() async {
-        guard let node = selectedNode else { return }
+        Self.writeLog("[ScanViewModel] trashSelectedNode() started")
+        guard let node = selectedNode else { 
+            Self.writeLog("[ScanViewModel] trashSelectedNode(): selectedNode is nil")
+            return 
+        }
         
+        Self.writeLog("[ScanViewModel] Selected node: \(node.name), path: \(node.path.path)")
         isProcessing = true
         processingMessage = "Moving \(node.name) to the Trash..."
         
         do {
-            let _ = try await CleanupService.moveToTrash(url: node.path)
+            Self.writeLog("[ScanViewModel] Calling CleanupService.moveToTrash(url:)...")
+            let trashedURL = try await CleanupService.moveToTrash(url: node.path)
+            Self.writeLog("[ScanViewModel] CleanupService.moveToTrash succeeded. Trashed URL: \(String(describing: trashedURL))")
             removeFromTreeAndAdvanceSelection(node)
             isProcessing = false
             self.actionMessageTitle = "Trash Successful"
             self.actionMessageBody = "Successfully moved \(node.name) to the Trash."
             self.showActionMessage = true
-            print("Successfully trashed \(node.name)")
+            Self.writeLog("[ScanViewModel] Successfully trashed \(node.name)")
         } catch {
             isProcessing = false
             self.actionMessageTitle = "Action Failed"
             self.actionMessageBody = "Failed to trash \(node.name): \(error.localizedDescription)"
             self.showActionMessage = true
-            print("Failed to trash: \(error)")
+            Self.writeLog("[ScanViewModel] Failed to trash \(node.name). Error: \(error)")
         }
     }
     
