@@ -169,6 +169,16 @@ struct TopItemRowView: View, Equatable {
                             .clipShape(Circle())
                             .offset(x: 10, y: 10)
                     }
+
+                    if item.isCloudPlaceholder {
+                        Image(systemName: "icloud.fill")
+                            .foregroundColor(.white)
+                            .font(.system(size: 8, weight: .bold))
+                            .padding(2)
+                            .background(Color.blue.opacity(0.8))
+                            .clipShape(Circle())
+                            .offset(x: -10, y: 10)
+                    }
                 }
                 
                 VStack(alignment: .leading, spacing: 2) {

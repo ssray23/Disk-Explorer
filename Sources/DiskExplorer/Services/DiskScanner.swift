@@ -157,6 +157,7 @@ public final class DiskScanner: Sendable {
         let resourceVals = try? fileURL.resourceValues(forKeys: [.isPackageKey, .isAliasFileKey, .isSymbolicLinkKey])
         let isPackage = resourceVals?.isPackage ?? false
         let childIsAlias = (resourceVals?.isAliasFile == true) || (resourceVals?.isSymbolicLink == true)
+        let isPlaceholder = isCloudPlaceholder(url: fileURL)
         
         if isPackage {
             let size = getDirectorySizeFallback(url: fileURL) // Packages need deep size calc
@@ -168,7 +169,8 @@ public final class DiskScanner: Sendable {
                 isAlias: childIsAlias,
                 children: nil,
                 category: classification.category,
-                path: fileURL
+                path: fileURL,
+                isCloudPlaceholder: isPlaceholder
             )
         } else {
             return scanDirectory(url: fileURL, isRoot: false)
@@ -190,16 +192,17 @@ public final class DiskScanner: Sendable {
         
         // Base case: it's a file
         if !isDirectory.boolValue {
-            let size = self.getFileSize(url: url)
+            let sizeInfo = self.getFileSizeInfo(url: url)
             let classification = FileCategories.classify(url: url, isDirectory: false)
             return FileNode(
                 name: url.lastPathComponent,
-                size: size,
+                size: sizeInfo.size,
                 isDirectory: false,
                 isAlias: isAlias,
                 children: nil,
                 category: classification.category,
-                path: url
+                path: url,
+                isCloudPlaceholder: sizeInfo.isCloudPlaceholder
             )
         }
         
@@ -240,19 +243,48 @@ public final class DiskScanner: Sendable {
         return root
     }
     
-    private func getFileSize(url: URL) -> Int64 {
+    private struct SizeInfo {
+        let size: Int64
+        let isCloudPlaceholder: Bool
+    }
+
+    /// Fetches size and cloud-placeholder status. Size comes from the resourceValues call
+    /// the scanner already makes; placeholder status uses the kernel-level SF_DATALESS flag
+    /// which covers iCloud Drive, OneDrive, Dropbox, Google Drive, and any other File
+    /// Provider extension — no provider-specific API needed.
+    private func getFileSizeInfo(url: URL) -> SizeInfo {
         do {
-            let values = try url.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .fileSizeKey])
+            let values = try url.resourceValues(forKeys: [
+                .totalFileAllocatedSizeKey, .fileSizeKey
+            ])
+            let placeholder = isCloudPlaceholder(url: url)
+
             if let allocated = values.totalFileAllocatedSize, allocated > 0 {
-                return Int64(allocated)
+                return SizeInfo(size: Int64(allocated), isCloudPlaceholder: placeholder)
             }
             if let size = values.fileSize {
-                return Int64(size)
+                return SizeInfo(size: Int64(size), isCloudPlaceholder: placeholder)
             }
+            return SizeInfo(size: 0, isCloudPlaceholder: placeholder)
         } catch {
             // Ignore permission errors
         }
-        return 0
+        return SizeInfo(size: 0, isCloudPlaceholder: false)
+    }
+
+    private func getFileSize(url: URL) -> Int64 {
+        getFileSizeInfo(url: url).size
+    }
+    
+    /// Checks whether a file is a cloud-synced placeholder whose data hasn't been
+    /// materialized locally. Uses the SF_DATALESS BSD flag (macOS 10.15+) which the
+    /// kernel sets on all dataless files regardless of sync provider — iCloud Drive,
+    /// OneDrive, Dropbox, Google Drive, or any File Provider extension.
+    private func isCloudPlaceholder(url: URL) -> Bool {
+        // SF_DATALESS = 0x40000000, defined in <sys/stat.h>
+        var statBuf = stat()
+        guard stat(url.path, &statBuf) == 0 else { return false }
+        return (statBuf.st_flags & 0x40000000) != 0
     }
     
     // Fallback for getting the size of a package (e.g. .app) where we don't build the tree
